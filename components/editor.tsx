@@ -29,6 +29,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
     ],
     content: content,
     editable: editable,
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class: "prose prose-sm sm:prose-base lg:prose-lg xl:prose-2xl m-5 focus:outline-none max-w-none dark:prose-invert",

@@ -17,7 +17,7 @@ export function SidebarTree() {
   });
 
   if (isLoading) return <div className="text-sm text-gray-500 dark:text-zinc-500 px-4">Loading...</div>;
-  if (error) return <div className="text-sm text-red-500 px-4">Error loading docs</div>;
+  if (error) return <div className="text-sm text-red-500 px-4">Error: {error.message}</div>;
 
   return (
     <div className="space-y-0.5">
