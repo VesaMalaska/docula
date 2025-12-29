@@ -31,7 +31,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
     editable: editable,
     editorProps: {
       attributes: {
-        class: "prose prose-sm sm:prose-base lg:prose-lg xl:prose-2xl m-5 focus:outline-none max-w-none",
+        class: "prose prose-sm sm:prose-base lg:prose-lg xl:prose-2xl m-5 focus:outline-none max-w-none dark:prose-invert",
       },
     },
     onUpdate: ({ editor }) => {
@@ -110,7 +110,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
   return (
     <div className="w-full">
       {editable && (
-        <div className="sticky top-0 z-10 mb-4 flex gap-1 rounded-md border bg-white p-1 shadow-sm flex-wrap">
+        <div className="sticky top-0 z-10 mb-4 flex gap-1 rounded-md border bg-white p-1 shadow-sm flex-wrap dark:bg-zinc-900 dark:border-zinc-800">
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleBold().run()}
             isActive={editor.isActive("bold")}
@@ -121,7 +121,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
             isActive={editor.isActive("italic")}
             icon={<Italic className="h-4 w-4" />}
           />
-          <div className="w-px bg-gray-200 mx-1" />
+          <div className="w-px bg-gray-200 dark:bg-zinc-700 mx-1" />
            <ToolbarBtn
             onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
             isActive={editor.isActive("heading", { level: 1 })}
@@ -132,7 +132,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
             isActive={editor.isActive("heading", { level: 2 })}
             icon={<Heading2 className="h-4 w-4" />}
           />
-          <div className="w-px bg-gray-200 mx-1" />
+          <div className="w-px bg-gray-200 dark:bg-zinc-700 mx-1" />
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             isActive={editor.isActive("bulletList")}
@@ -143,7 +143,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
             isActive={editor.isActive("orderedList")}
             icon={<ListOrdered className="h-4 w-4" />}
           />
-           <div className="w-px bg-gray-200 mx-1" />
+           <div className="w-px bg-gray-200 dark:bg-zinc-700 mx-1" />
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
             isActive={editor.isActive("codeBlock")}
@@ -154,7 +154,7 @@ export function Editor({ content, editable, onChange }: EditorProps) {
             isActive={editor.isActive("link")}
             icon={<LinkIcon className="h-4 w-4" />}
           />
-           <div className="w-px bg-gray-200 mx-1" />
+           <div className="w-px bg-gray-200 dark:bg-zinc-700 mx-1" />
            <ToolbarBtn
             onClick={addImage}
             isActive={false}
@@ -172,8 +172,8 @@ function ToolbarBtn({ onClick, isActive, icon }: { onClick: () => void; isActive
     <button
       onClick={onClick}
       className={cn(
-        "rounded p-1.5 hover:bg-gray-100",
-        isActive && "bg-gray-200 text-gray-900"
+        "rounded p-1.5 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors",
+        isActive && "bg-gray-200 text-gray-900 dark:bg-zinc-700 dark:text-zinc-100"
       )}
     >
       {icon}

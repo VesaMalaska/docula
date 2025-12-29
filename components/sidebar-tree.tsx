@@ -16,7 +16,7 @@ export function SidebarTree() {
     queryFn: getSidebarTree,
   });
 
-  if (isLoading) return <div className="text-sm text-gray-500 px-4">Loading...</div>;
+  if (isLoading) return <div className="text-sm text-gray-500 dark:text-zinc-500 px-4">Loading...</div>;
   if (error) return <div className="text-sm text-red-500 px-4">Error loading docs</div>;
 
   return (
@@ -25,7 +25,7 @@ export function SidebarTree() {
         <TreeNode key={node.id} node={node} level={0} />
       ))}
       {tree?.length === 0 && (
-          <div className="px-4 py-2 text-sm text-gray-400">No documents yet.</div>
+          <div className="px-4 py-2 text-sm text-gray-400 dark:text-zinc-500">No documents yet.</div>
       )}
     </div>
   );
@@ -76,8 +76,10 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
     <div>
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-r-md py-1 text-sm hover:bg-gray-100 pr-2",
-          isActive && "bg-gray-200 font-medium text-gray-900"
+          "group flex items-center gap-1 rounded-r-md py-1 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 pr-2 transition-colors",
+          isActive 
+            ? "bg-gray-200 dark:bg-zinc-800 font-medium text-gray-900 dark:text-zinc-100" 
+            : "text-gray-700 dark:text-zinc-400"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
       >
@@ -87,7 +89,7 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
             setIsOpen(!isOpen);
           }}
           className={cn(
-            "h-4 w-4 shrink-0 text-gray-500 hover:text-gray-700 transition-transform",
+            "h-4 w-4 shrink-0 text-gray-500 hover:text-gray-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-transform",
             !hasChildren && "invisible"
           )}
         >
@@ -96,7 +98,7 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
         
         <Link href={`/doc/${node.id}`} className="flex-1 truncate block mr-2">
             <div className="flex items-center gap-2">
-                <FileText className="h-3.5 w-3.5 text-gray-400" />
+                <FileText className={cn("h-3.5 w-3.5", isActive ? "text-gray-600 dark:text-zinc-300" : "text-gray-400 dark:text-zinc-500")} />
                 <span className="truncate">{node.title}</span>
             </div>
         </Link>
@@ -106,7 +108,7 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
             <button 
                 onClick={(e) => createChild(e)}
                 disabled={isCreating}
-                className="text-gray-400 hover:text-gray-600 p-0.5 rounded hover:bg-gray-200"
+                className="text-gray-400 hover:text-gray-600 dark:text-zinc-500 dark:hover:text-zinc-300 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700"
                 title="Add Child Page"
             >
                 {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
@@ -114,7 +116,7 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
             <button 
                 onClick={(e) => deleteDoc(e)}
                 disabled={isDeleting}
-                className="text-gray-400 hover:text-red-600 p-0.5 rounded hover:bg-gray-200"
+                className="text-gray-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-400 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700"
                 title="Delete Page"
             >
                 {isDeleting ? <Loader2 className="h-3 w-3 animate-spin"/> : <Trash2 className="h-3 w-3" />}

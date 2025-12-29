@@ -22,16 +22,16 @@ export default function MainLayout({
 
   if (loading || !user) {
      return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className="flex h-screen w-full overflow-hidden bg-background">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-white p-8">
+      <main className="flex-1 overflow-y-auto p-8">
         {children}
       </main>
     </div>
