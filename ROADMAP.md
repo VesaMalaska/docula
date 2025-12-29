@@ -1,6 +1,7 @@
-# Project Nexus Roadmap
+# Project Docula Roadmap
 
 ## Phase 1: Skeleton & Auth
+
 - [x] **Project Setup**
   - [x] Verify/Install dependencies (`firebase`, `lucide-react`, `clsx`, `tailwind-merge`).
   - [x] Initialize Shadcn UI (or compatible base components).
@@ -18,6 +19,7 @@
   - [x] Implement Breadcrumbs component.
 
 ## Phase 2: CRUD & Hierarchy
+
 - [x] **Database & Actions**
   - [x] Define Firestore Schema (Types).
   - [x] Implement `actions/document.ts` (`createDocument`, `getDocument`, `getSidebarTree`, `updateDocument`).
@@ -34,6 +36,7 @@
   - [x] Implement "Move/Reparent" (Basic settings modal).
 
 ## Phase 3: Locking Mechanism (Concurrency)
+
 - [x] **Locking Logic**
   - [x] Implement `actions/locking.ts` (`acquireLock`, `renewLock`, `releaseLock`).
   - [x] Update `getDocument` to return lock status.
@@ -45,6 +48,7 @@
   - [x] Handle window close/unload to release lock.
 
 ## Phase 4: S3 & Backlinks (Networked Thought)
+
 - [x] **Image Upload (S3)**
   - [x] Implement `actions/s3.ts` (`getPresignedUrl`).
   - [x] Add Drag & Drop image handler to Tiptap.
@@ -54,6 +58,7 @@
   - [x] Update Transaction logic to handle `backlinks` array updates on target documents.
 
 ## Phase 5: Polish & Refinement
+
 - [ ] **Performance Tuning**
   - [ ] Optimize Sidebar loading (Caching?).
 - [ ] **UI Polish**

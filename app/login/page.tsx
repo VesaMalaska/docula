@@ -50,13 +50,15 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-10 shadow-md">
         <div className="text-center">
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            Nexus Docs
+            Docula Docs
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            {isLogin ? "Sign in to access internal documentation" : "Create a new account"}
+            {isLogin
+              ? "Sign in to access internal documentation"
+              : "Create a new account"}
           </p>
         </div>
-        
+
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="-space-y-px rounded-md shadow-sm">
             <div>
@@ -94,9 +96,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="text-red-500 text-sm text-center">
-              {error}
-            </div>
+            <div className="text-red-500 text-sm text-center">{error}</div>
           )}
 
           <div>
@@ -106,9 +106,11 @@ export default function LoginPage() {
               className="group relative flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
             >
               {isSubmitting ? (
-                 <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : isLogin ? (
+                "Sign in"
               ) : (
-                isLogin ? "Sign in" : "Register"
+                "Register"
               )}
             </button>
           </div>
@@ -123,7 +125,9 @@ export default function LoginPage() {
             }}
             className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
           >
-            {isLogin ? "Don't have an account? Register" : "Already have an account? Sign in"}
+            {isLogin
+              ? "Don't have an account? Register"
+              : "Already have an account? Sign in"}
           </button>
         </div>
       </div>
