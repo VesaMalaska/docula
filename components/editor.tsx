@@ -74,6 +74,11 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
           }
         });
 
+        if (!key) {
+            console.error("No key returned from presigned URL");
+            return;
+        }
+
         // Get a signed URL for reading the image we just uploaded
         const signedUrl = await getPresignedGetUrl(key);
         if (signedUrl) {
