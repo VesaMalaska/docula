@@ -7,15 +7,16 @@ import Link from "@tiptap/extension-link";
 import { useEffect, useState } from "react";
 import { Bold, Italic, List, ListOrdered, Code, Heading1, Heading2, Image as ImageIcon, Loader2, Link as LinkIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getPresignedUrl } from "@/lib/actions/s3";
+import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
 
 interface EditorProps {
   content: any;
   editable: boolean;
   onChange?: (content: any) => void;
+  onImageUpload?: (url: string) => void;
 }
 
-export function Editor({ content, editable, onChange }: EditorProps) {
+export function Editor({ content, editable, onChange, onImageUpload }: EditorProps) {
   const [isUploading, setIsUploading] = useState(false);
 
   const editor = useEditor({
@@ -63,17 +64,26 @@ export function Editor({ content, editable, onChange }: EditorProps) {
             return;
         }
 
-        const { url } = presigned;
+        const { url, key } = presigned;
         
         await fetch(url, {
           method: "PUT",
           body: file,
-          headers: { "Content-Type": file.type }
+          headers: { 
+            "Content-Type": file.type,
+          }
         });
 
-        const imageUrl = url.split("?")[0]; 
-        
-        editor?.chain().focus().setImage({ src: imageUrl }).run();
+        // Get a signed URL for reading the image we just uploaded
+        const signedUrl = await getPresignedGetUrl(key);
+        if (signedUrl) {
+            editor?.chain().focus().setImage({ src: signedUrl }).run();
+            // Pass the signed URL to the parent, but the parent should strip params before saving
+            // actually onImageUpload is used to track session images to permanentize/delete
+            // The permanentize logic expects the url that includes "temp/"
+            // The signedUrl includes "temp/" in the path, so it's fine.
+            onImageUpload?.(signedUrl);
+        }
 
       } catch (e) {
         console.error(e);

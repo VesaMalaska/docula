@@ -12,6 +12,8 @@ import {
   orderBy
 } from "firebase/firestore";
 import { Document, SidebarNode } from "@/lib/types";
+import { getPresignedGetUrl } from "./s3";
+import { extractImageUrls, replaceImageUrls } from "../utils";
 
 export async function createDocument(parentId: string | null = null, userId: string) {
   const newDoc = {
@@ -37,10 +39,40 @@ export async function getDocument(id: string): Promise<Document | null> {
 
   if (docSnap.exists()) {
     const data = docSnap.data();
-    return { 
+    const docData = { 
         id: docSnap.id, 
         ...data 
     } as Document;
+
+    // Sign images for private bucket access
+    if (docData.content) {
+        const images = extractImageUrls(docData.content);
+        const mapping: Record<string, string> = {};
+        
+        await Promise.all(images.map(async (url) => {
+            try {
+                // Extract key from URL
+                // URL format: https://bucket.s3.region.amazonaws.com/path/to/key
+                const urlObj = new URL(url);
+                const path = decodeURIComponent(urlObj.pathname); // e.g. /path/to/key
+                
+                // We expect keys to start with 'uploads/' or 'temp/'
+                // Remove leading slash if present
+                const key = path.startsWith('/') ? path.substring(1) : path;
+                
+                const signedUrl = await getPresignedGetUrl(key);
+                if (signedUrl) {
+                    mapping[url] = signedUrl;
+                }
+            } catch (e) {
+                console.error("Failed to sign url:", url);
+            }
+        }));
+
+        docData.content = replaceImageUrls(docData.content, mapping);
+    }
+
+    return docData;
   } else {
     return null;
   }

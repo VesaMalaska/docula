@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getDocument, updateDocument, getSidebarTree } from "@/lib/actions/document";
 import { acquireLock, releaseLock } from "@/lib/actions/locking";
+import { permanentizeImages, deleteImages } from "@/lib/actions/s3";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useParams } from "next/navigation";
 import { Editor } from "@/components/editor";
@@ -11,6 +12,7 @@ import { Loader2, Save, Edit2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import Link from "next/link";
 import { SidebarNode } from "@/lib/types";
+import { extractImageUrls, replaceImageUrls, stripImageParams } from "@/lib/utils";
 
 function BacklinksList({ docIds }: { docIds: string[] }) {
     const { data: tree } = useQuery({ queryKey: ["sidebar-tree"], queryFn: getSidebarTree });
@@ -51,8 +53,10 @@ export default function DocPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState<any>(null);
   const [title, setTitle] = useState("");
+  const [sessionImages, setSessionImages] = useState<string[]>([]);
   
   const isEditingRef = useRef(false);
+  const sessionImagesRef = useRef<string[]>([]);
 
   const { data: doc, isLoading } = useQuery({
     queryKey: ["doc", id],
@@ -65,6 +69,8 @@ export default function DocPage() {
       if (!isEditing) {
           setContent(doc.content);
           setTitle(doc.title);
+          setSessionImages([]);
+          sessionImagesRef.current = [];
       }
     }
   }, [doc, isEditing]);
@@ -73,12 +79,20 @@ export default function DocPage() {
       isEditingRef.current = isEditing;
   }, [isEditing]);
 
+  useEffect(() => {
+    sessionImagesRef.current = sessionImages;
+  }, [sessionImages]);
+
   useHeartbeat(id, isEditing, user?.uid);
 
   useEffect(() => {
     return () => {
-        if (isEditingRef.current && user?.uid) {
-            releaseLock(id, user.uid);
+        if (isEditingRef.current) {
+            if (user?.uid) releaseLock(id, user.uid);
+            // Delete temp images if navigated away without saving
+            if (sessionImagesRef.current.length > 0) {
+                deleteImages(sessionImagesRef.current);
+            }
         }
     };
   }, [id, user?.uid]);
@@ -100,16 +114,64 @@ export default function DocPage() {
         setContent(doc.content);
         setTitle(doc.title);
       }
+      
+      // Delete temp images uploaded during this session
+      if (sessionImages.length > 0) {
+          await deleteImages(sessionImages);
+          setSessionImages([]);
+      }
+
       if (user) await releaseLock(id, user.uid);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
   };
 
   const { mutate: save, isPending: isSaving } = useMutation({
     mutationFn: async () => {
+      // Clean content from signed URLs (strip params)
+      let finalContent = stripImageParams(content);
+
+      // 1. Find all images in current content
+      const currentImages = extractImageUrls(finalContent);
+      
+      // 2. Filter sessionImages to only those still present in content
+      const imagesToPermanentize: string[] = [];
+      const imagesToDelete: string[] = [];
+
+      sessionImages.forEach(url => {
+          try {
+              const urlObj = new URL(url);
+              urlObj.search = "";
+              const baseUrl = urlObj.toString();
+              
+              if (currentImages.includes(baseUrl)) {
+                  imagesToPermanentize.push(url);
+              } else {
+                  imagesToDelete.push(url);
+              }
+          } catch (e) {
+              console.error("Invalid session image URL:", url);
+          }
+      });
+
+
+      // 3. Move images from temp to uploads
+      if (imagesToPermanentize.length > 0) {
+          const mapping = await permanentizeImages(imagesToPermanentize);
+          // 4. Update content with new URLs
+          finalContent = replaceImageUrls(content, mapping);
+      }
+
+      // 5. Delete images that were uploaded but then removed from editor before saving
+      if (imagesToDelete.length > 0) {
+          await deleteImages(imagesToDelete);
+      }
+
       await updateDocument(id, { 
         title, 
-        content,
+        content: finalContent,
       });
+
+      setSessionImages([]);
       if (user) await releaseLock(id, user.uid);
     },
     onSuccess: () => {
@@ -196,7 +258,8 @@ export default function DocPage() {
             key={doc.id + (isEditing ? '-edit' : '-view')} 
             content={content} 
             editable={isEditing} 
-            onChange={setContent} 
+            onChange={setContent}
+            onImageUpload={(url) => setSessionImages(prev => [...prev, url])}
         />
       </div>
       
