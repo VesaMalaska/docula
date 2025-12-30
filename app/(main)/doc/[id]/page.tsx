@@ -13,6 +13,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import Link from "next/link";
 import { SidebarNode } from "@/lib/types";
 import { extractImageUrls, replaceImageUrls, stripImageParams } from "@/lib/utils";
+import { Breadcrumbs } from "@/components/breadcrumbs";
 
 function BacklinksList({ docIds }: { docIds: string[] }) {
     const { data: tree } = useQuery({ queryKey: ["sidebar-tree"], queryFn: getSidebarTree });
@@ -40,6 +41,30 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
                     </Link>
                 );
             })}
+        </div>
+    );
+}
+
+function DocSkeleton() {
+    return (
+        <div className="mx-auto max-w-4xl animate-pulse">
+            <div className="flex items-center gap-2 mb-4">
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4" />
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-16" />
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-16" />
+            </div>
+            <div className="mb-6 border-b dark:border-zinc-800 pb-4 flex justify-between items-center">
+                <div className="h-10 bg-gray-200 dark:bg-zinc-800 rounded w-1/2" />
+                <div className="h-8 bg-gray-200 dark:bg-zinc-800 rounded w-20" />
+            </div>
+            <div className="space-y-4">
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-5/6" />
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4/6" />
+                <div className="h-64 bg-gray-100 dark:bg-zinc-900/50 rounded w-full mt-8" />
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
+                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-3/4" />
+            </div>
         </div>
     );
 }
@@ -187,7 +212,7 @@ export default function DocPage() {
     },
   });
 
-  if (isLoading) return <div className="p-8 text-gray-500 dark:text-zinc-400">Loading document...</div>;
+  if (isLoading) return <DocSkeleton />;
   if (!doc) return <div className="p-8 text-gray-500 dark:text-zinc-400">Document not found</div>;
 
   const isLockedByOther = doc.lock?.active && 
@@ -196,6 +221,8 @@ export default function DocPage() {
 
   return (
     <div className="mx-auto max-w-4xl relative">
+      <Breadcrumbs path={doc.path || []} currentTitle={doc.title} />
+      
       {isLockedByOther && (
           <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
             <div className="flex">

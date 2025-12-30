@@ -30,8 +30,9 @@ export default function LoginPage() {
       } else {
         await registerWithEmail(email, password);
       }
-    } catch (err: any) {
-      setError(err.message || "An error occurred");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "An error occurred";
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

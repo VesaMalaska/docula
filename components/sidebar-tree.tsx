@@ -6,23 +6,35 @@ import { SidebarNode } from "@/lib/types";
 import { ChevronRight, ChevronDown, FileText, Plus, Trash2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
 
 export function SidebarTree() {
   const { data: tree, isLoading, error } = useQuery({
     queryKey: ["sidebar-tree"],
     queryFn: getSidebarTree,
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
-  if (isLoading) return <div className="text-sm text-gray-500 dark:text-zinc-500 px-4">Loading...</div>;
+  const { isExpanded, toggleNode } = useExpandedNodes();
+
+  if (isLoading) {
+    return <SidebarSkeleton />;
+  }
+
   if (error) return <div className="text-sm text-red-500 px-4">Error: {error.message}</div>;
 
   return (
     <div className="space-y-0.5">
       {tree?.map((node) => (
-        <TreeNode key={node.id} node={node} level={0} />
+        <TreeNode 
+          key={node.id} 
+          node={node} 
+          level={0} 
+          isExpanded={isExpanded}
+          toggleNode={toggleNode}
+        />
       ))}
       {tree?.length === 0 && (
           <div className="px-4 py-2 text-sm text-gray-400 dark:text-zinc-500">No documents yet.</div>
@@ -31,24 +43,47 @@ export function SidebarTree() {
   );
 }
 
-function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
-  const [isOpen, setIsOpen] = useState(false);
+function SidebarSkeleton() {
+    const widths = ["w-1/2", "w-3/4", "w-2/3", "w-1/3", "w-1/2", "w-2/3", "w-3/4", "w-1/2"];
+    return (
+        <div className="space-y-2 px-4 animate-pulse">
+            {widths.map((width, i) => (
+                <div key={i} className="flex items-center gap-2">
+                    <div className="h-3 w-3 bg-gray-200 dark:bg-zinc-800 rounded shadow-sm" />
+                    <div className={cn("h-4 bg-gray-200 dark:bg-zinc-800 rounded shadow-sm", width)} />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function TreeNode({ 
+    node, 
+    level, 
+    isExpanded, 
+    toggleNode 
+}: { 
+    node: SidebarNode; 
+    level: number;
+    isExpanded: (id: string) => boolean;
+    toggleNode: (id: string) => void;
+}) {
+  const isOpen = isExpanded(node.id);
   const pathname = usePathname();
   const isActive = pathname === `/doc/${node.id}`;
   const hasChildren = node.children.length > 0;
 
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { user } = useAuth();
 
   const { mutate: createChild, isPending: isCreating } = useMutation({
     mutationFn: (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      return createDocument(node.id, user?.uid || "");
+      return createDocument(node.id);
     },
     onSuccess: (newId) => {
-      setIsOpen(true);
+      if (!isOpen) toggleNode(node.id);
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] });
       router.push(`/doc/${newId}`);
     },
@@ -86,7 +121,7 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
         <button
           onClick={(e) => {
             e.preventDefault();
-            setIsOpen(!isOpen);
+            toggleNode(node.id);
           }}
           className={cn(
             "h-4 w-4 shrink-0 text-gray-500 hover:text-gray-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-transform",
@@ -127,7 +162,13 @@ function TreeNode({ node, level }: { node: SidebarNode; level: number }) {
       {isOpen && (
         <div>
           {node.children.map((child) => (
-            <TreeNode key={child.id} node={child} level={level + 1} />
+            <TreeNode 
+              key={child.id} 
+              node={child} 
+              level={level + 1} 
+              isExpanded={isExpanded}
+              toggleNode={toggleNode}
+            />
           ))}
         </div>
       )}

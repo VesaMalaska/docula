@@ -1,23 +1,28 @@
 "use client";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { LogOut, Plus, Loader2 } from "lucide-react";
+import { LogOut, Plus, Loader2, X } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter } from "next/navigation";
 import { ModeToggle } from "./mode-toggle";
 
-export function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void;
+}
+
+export function Sidebar({ onClose }: SidebarProps) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
 
   const { mutate: createDoc, isPending } = useMutation({
-    mutationFn: () => createDocument(null, user?.uid || ""),
+    mutationFn: () => createDocument(null),
     onSuccess: (newDocId) => {
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] });
       router.push(`/doc/${newDocId}`);
+      onClose?.();
     },
   });
 
@@ -25,21 +30,34 @@ export function Sidebar() {
     <aside className="flex h-full w-64 flex-col border-r bg-gray-50 dark:bg-zinc-900 dark:border-zinc-800 transition-colors duration-300">
       <div className="flex items-center justify-between p-4 border-b dark:border-zinc-800">
         <h1 className="text-xl font-bold dark:text-zinc-100">Docula</h1>
-        <button
-          onClick={() => createDoc()}
-          disabled={isPending}
-          className="rounded p-1 hover:bg-gray-200 dark:hover:bg-zinc-800 dark:text-zinc-400 disabled:opacity-50"
-          title="New Document"
-        >
-          {isPending ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Plus className="h-5 w-5" />
-          )}
-        </button>
+        <div className="flex items-center gap-1">
+            <button
+            onClick={() => createDoc()}
+            disabled={isPending}
+            className="rounded p-1 hover:bg-gray-200 dark:hover:bg-zinc-800 dark:text-zinc-400 disabled:opacity-50"
+            title="New Document"
+            >
+            {isPending ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+                <Plus className="h-5 w-5" />
+            )}
+            </button>
+            <button
+                onClick={onClose}
+                className="p-1 lg:hidden text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            >
+                <X className="h-5 w-5" />
+            </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-4">
+      <div className="flex-1 overflow-y-auto py-4" onClick={(e) => {
+          // If clicked on a link, close the sidebar on mobile
+          if ((e.target as HTMLElement).closest('a')) {
+              onClose?.();
+          }
+      }}>
         <SidebarTree />
       </div>
 

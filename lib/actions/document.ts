@@ -15,12 +15,23 @@ import { Document, SidebarNode } from "@/lib/types";
 import { getPresignedGetUrl } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
 
-export async function createDocument(parentId: string | null = null, userId: string) {
+export async function createDocument(parentId: string | null = null) {
+  let path: string[] = [];
+  
+  if (parentId) {
+    const parentRef = doc(db, "documents", parentId);
+    const parentSnap = await getDoc(parentRef);
+    if (parentSnap.exists()) {
+      const parentData = parentSnap.data();
+      path = [...(parentData.path || []), parentId];
+    }
+  }
+
   const newDoc = {
     title: "Untitled",
     content: {}, 
     parentId,
-    path: [], 
+    path, 
     tags: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -64,7 +75,7 @@ export async function getDocument(id: string): Promise<Document | null> {
                 if (signedUrl) {
                     mapping[url] = signedUrl;
                 }
-            } catch (e) {
+            } catch {
                 console.error("Failed to sign url:", url);
             }
         }));
