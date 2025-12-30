@@ -42,10 +42,10 @@ export function Breadcrumbs({ path, currentTitle }: BreadcrumbsProps) {
   }, [path, tree]);
 
   return (
-    <nav className="flex items-center gap-1 text-sm text-gray-500 dark:text-zinc-500 mb-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
+    <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
       <Link 
         href="/" 
-        className="flex items-center gap-1 hover:text-gray-900 dark:hover:text-zinc-300 transition-colors"
+        className="flex items-center gap-1 hover:text-foreground transition-colors"
       >
         <Home className="h-3.5 w-3.5" />
         <span className="sr-only">Home</span>
@@ -56,14 +56,14 @@ export function Breadcrumbs({ path, currentTitle }: BreadcrumbsProps) {
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
           <Link 
             href={`/doc/${item.id}`}
-            className="hover:text-gray-900 dark:hover:text-zinc-300 transition-colors truncate max-w-[150px]"
+            className="hover:text-foreground transition-colors truncate max-w-[150px]"
           >
             {item.title}
           </Link>
         </div>
       ))}
 
-      <div className="flex items-center gap-1 text-gray-900 dark:text-zinc-100 font-medium">
+      <div className="flex items-center gap-1 text-foreground font-medium">
         <ChevronRight className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate max-w-[200px]">{currentTitle}</span>
       </div>

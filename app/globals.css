@@ -3,49 +3,49 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #09090b; /* zinc-950 */
+  --foreground: #020617; /* slate-950 */
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #020617;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #18181b; /* zinc-900 */
-  --primary-foreground: #fafafa; /* zinc-50 */
-  --secondary: #f4f4f5; /* zinc-100 */
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a; /* zinc-500 */
-  --accent: #f4f4f5;
-  --accent-foreground: #18181b;
+  --popover-foreground: #020617;
+  --primary: #0f172a; /* slate-900 */
+  --primary-foreground: #f8fafc; /* slate-50 */
+  --secondary: #f1f5f9; /* slate-100 */
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b; /* slate-500 */
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
   --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  --border: #e4e4e7; /* zinc-200 */
-  --input: #e4e4e7;
-  --ring: #18181b;
+  --destructive-foreground: #f8fafc;
+  --border: #e2e8f0; /* slate-200 */
+  --input: #e2e8f0;
+  --ring: #0f172a;
   
   /* Custom semantic vars for sidebar if needed, generally handled by utilities + dark variant, 
      but setting base bg here helps */
 }
 
 .dark {
-  --background: #18181b; /* zinc-900 (Softer than #000) */
-  --foreground: #e4e4e7; /* zinc-200 (Softer than #fff) */
-  --card: #18181b;
-  --card-foreground: #e4e4e7;
-  --popover: #18181b;
-  --popover-foreground: #e4e4e7;
-  --primary: #fafafa;
-  --primary-foreground: #18181b;
-  --secondary: #27272a; /* zinc-800 */
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa; /* zinc-400 */
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
+  --background: #020617; /* slate-950 */
+  --foreground: #f8fafc; /* slate-50 */
+  --card: #020617;
+  --card-foreground: #f8fafc;
+  --popover: #020617;
+  --popover-foreground: #f8fafc;
+  --primary: #f8fafc;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b; /* slate-800 */
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8; /* slate-400 */
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
   --destructive: #7f1d1d;
-  --destructive-foreground: #fafafa;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #d4d4d8;
+  --destructive-foreground: #f8fafc;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #cbd5e1;
 }
 
 @theme inline {

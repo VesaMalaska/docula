@@ -27,14 +27,14 @@ export function Sidebar({ onClose }: SidebarProps) {
   });
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r bg-gray-50 dark:bg-zinc-900 dark:border-zinc-800 transition-colors duration-300">
-      <div className="flex items-center justify-between p-4 border-b dark:border-zinc-800">
-        <h1 className="text-xl font-bold dark:text-zinc-100">Docula</h1>
+    <aside className="flex h-full w-64 flex-col border-r border-border bg-muted transition-colors duration-300">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <h1 className="text-xl font-bold text-foreground">Docula</h1>
         <div className="flex items-center gap-1">
             <button
             onClick={() => createDoc()}
             disabled={isPending}
-            className="rounded p-1 hover:bg-gray-200 dark:hover:bg-zinc-800 dark:text-zinc-400 disabled:opacity-50"
+            className="rounded p-1 hover:bg-accent hover:text-accent-foreground text-muted-foreground disabled:opacity-50"
             title="New Document"
             >
             {isPending ? (
@@ -45,7 +45,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             </button>
             <button
                 onClick={onClose}
-                className="p-1 lg:hidden text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                className="p-1 lg:hidden text-muted-foreground hover:text-foreground"
             >
                 <X className="h-5 w-5" />
             </button>
@@ -61,7 +61,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         <SidebarTree />
       </div>
 
-      <div className="p-4 border-t bg-gray-100 dark:bg-zinc-900/50 dark:border-zinc-800">
+      <div className="p-4 border-t border-border bg-background/50">
         <div className="flex items-center justify-between gap-2 mb-4">
            <div className="flex items-center gap-2 overflow-hidden">
             {user?.photoURL && (
@@ -71,7 +71,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 className="w-8 h-8 rounded-full"
                 />
             )}
-            <span className="text-sm font-medium truncate flex-1 dark:text-zinc-200">
+            <span className="text-sm font-medium truncate flex-1 text-foreground">
                 {user?.displayName || user?.email}
             </span>
            </div>
@@ -79,7 +79,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
         <button
           onClick={logout}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
         >
           <LogOut className="h-4 w-4" />
           Logout

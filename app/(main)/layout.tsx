@@ -49,14 +49,14 @@ export default function MainLayout({
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b px-4 lg:hidden shrink-0 dark:border-zinc-800">
+        <header className="flex h-14 items-center border-b border-border px-4 lg:hidden shrink-0">
             <button 
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-2 -ml-2 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                className="p-2 -ml-2 text-muted-foreground hover:text-foreground"
             >
                 <Menu className="h-6 w-6" />
             </button>
-            <span className="ml-2 font-bold dark:text-zinc-100">Docula</span>
+            <span className="ml-2 font-bold text-foreground">Docula</span>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
             {children}

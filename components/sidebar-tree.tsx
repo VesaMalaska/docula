@@ -37,7 +37,7 @@ export function SidebarTree() {
         />
       ))}
       {tree?.length === 0 && (
-          <div className="px-4 py-2 text-sm text-gray-400 dark:text-zinc-500">No documents yet.</div>
+          <div className="px-4 py-2 text-sm text-muted-foreground">No documents yet.</div>
       )}
     </div>
   );
@@ -49,8 +49,8 @@ function SidebarSkeleton() {
         <div className="space-y-2 px-4 animate-pulse">
             {widths.map((width, i) => (
                 <div key={i} className="flex items-center gap-2">
-                    <div className="h-3 w-3 bg-gray-200 dark:bg-zinc-800 rounded shadow-sm" />
-                    <div className={cn("h-4 bg-gray-200 dark:bg-zinc-800 rounded shadow-sm", width)} />
+                    <div className="h-3 w-3 bg-muted rounded shadow-sm" />
+                    <div className={cn("h-4 bg-muted rounded shadow-sm", width)} />
                 </div>
             ))}
         </div>
@@ -111,10 +111,10 @@ function TreeNode({
     <div>
       <div
         className={cn(
-          "group flex items-center gap-1 rounded-r-md py-1 text-sm hover:bg-gray-100 dark:hover:bg-zinc-800 pr-2 transition-colors",
+          "group flex items-center gap-1 rounded-r-md py-1 text-sm hover:bg-accent pr-2 transition-colors",
           isActive 
-            ? "bg-gray-200 dark:bg-zinc-800 font-medium text-gray-900 dark:text-zinc-100" 
-            : "text-gray-700 dark:text-zinc-400"
+            ? "bg-accent font-medium text-accent-foreground" 
+            : "text-muted-foreground hover:text-foreground"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
       >
@@ -124,7 +124,7 @@ function TreeNode({
             toggleNode(node.id);
           }}
           className={cn(
-            "h-4 w-4 shrink-0 text-gray-500 hover:text-gray-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-transform",
+            "h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground transition-transform",
             !hasChildren && "invisible"
           )}
         >
@@ -133,7 +133,7 @@ function TreeNode({
         
         <Link href={`/doc/${node.id}`} className="flex-1 truncate block mr-2">
             <div className="flex items-center gap-2">
-                <FileText className={cn("h-3.5 w-3.5", isActive ? "text-gray-600 dark:text-zinc-300" : "text-gray-400 dark:text-zinc-500")} />
+                <FileText className={cn("h-3.5 w-3.5", isActive ? "text-foreground" : "text-muted-foreground")} />
                 <span className="truncate">{node.title}</span>
             </div>
         </Link>
@@ -143,7 +143,7 @@ function TreeNode({
             <button 
                 onClick={(e) => createChild(e)}
                 disabled={isCreating}
-                className="text-gray-400 hover:text-gray-600 dark:text-zinc-500 dark:hover:text-zinc-300 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700"
+                className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted"
                 title="Add Child Page"
             >
                 {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
@@ -151,7 +151,7 @@ function TreeNode({
             <button 
                 onClick={(e) => deleteDoc(e)}
                 disabled={isDeleting}
-                className="text-gray-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-400 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-zinc-700"
+                className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-muted"
                 title="Delete Page"
             >
                 {isDeleting ? <Loader2 className="h-3 w-3 animate-spin"/> : <Trash2 className="h-3 w-3" />}
