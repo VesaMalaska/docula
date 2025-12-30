@@ -66,13 +66,23 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
 
         const { url, key } = presigned;
         
-        await fetch(url, {
-          method: "PUT",
-          body: file,
-          headers: { 
-            "Content-Type": file.type,
+        try {
+          const uploadRes = await fetch(url, {
+            method: "PUT",
+            body: file,
+            headers: { 
+              "Content-Type": file.type,
+            }
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error(`Upload failed with status: ${uploadRes.status}`);
           }
-        });
+        } catch (uploadError) {
+          console.error("S3 Upload Error:", uploadError);
+          alert("Upload failed: Check console for CORS or Network errors.");
+          return;
+        }
 
         if (!key) {
             console.error("No key returned from presigned URL");
