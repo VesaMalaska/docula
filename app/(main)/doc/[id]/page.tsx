@@ -127,41 +127,47 @@ export default function DocPage() {
 
   const { mutate: save, isPending: isSaving } = useMutation({
     mutationFn: async () => {
-      // Clean content from signed URLs (strip params)
+      // 1. Clean content from signed URLs (strip params) to get clean/permanent keys
       let finalContent = stripImageParams(content);
 
-      // 1. Find all images in current content
+      // 2. Find all images in the CLEAN content (these are now Unsigned URLs)
       const currentImages = extractImageUrls(finalContent);
       
-      // 2. Filter sessionImages to only those still present in content
+      // 3. Filter sessionImages to only those still present in content
       const imagesToPermanentize: string[] = [];
       const imagesToDelete: string[] = [];
 
-      sessionImages.forEach(url => {
+      // We need to compare "Unsigned Session URL" vs "Unsigned Content URL"
+      sessionImages.forEach(signedUrl => {
           try {
-              const urlObj = new URL(url);
+              const urlObj = new URL(signedUrl);
               urlObj.search = "";
-              const baseUrl = urlObj.toString();
+              const unsignedUrl = urlObj.toString();
               
-              if (currentImages.includes(baseUrl)) {
-                  imagesToPermanentize.push(url);
+              if (currentImages.includes(unsignedUrl)) {
+                  // We pass the UNSIGNED URL to permanentizeImages
+                  // This ensures the mapping keys returned are Unsigned, matching finalContent
+                  imagesToPermanentize.push(unsignedUrl);
               } else {
-                  imagesToDelete.push(url);
+                  imagesToDelete.push(signedUrl);
               }
           } catch (e) {
-              console.error("Invalid session image URL:", url);
+              console.error("Invalid session image URL:", signedUrl);
           }
       });
 
 
-      // 3. Move images from temp to uploads
+      // 4. Move images from temp to uploads
       if (imagesToPermanentize.length > 0) {
+          // permanentizeImages returns { "unsignedTempUrl": "unsignedUploadsUrl" }
           const mapping = await permanentizeImages(imagesToPermanentize);
-          // 4. Update content with new URLs
-          finalContent = replaceImageUrls(content, mapping);
+          
+          // 5. Update content with new URLs
+          // Since finalContent has Unsigned URLs, and mapping keys are Unsigned URLs, this works.
+          finalContent = replaceImageUrls(finalContent, mapping);
       }
 
-      // 5. Delete images that were uploaded but then removed from editor before saving
+      // 6. Delete images that were uploaded but then removed from editor before saving
       if (imagesToDelete.length > 0) {
           await deleteImages(imagesToDelete);
       }

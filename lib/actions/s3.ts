@@ -94,10 +94,12 @@ export async function permanentizeImages(urls: string[]) {
             }));
             console.log(`Successfully copied ${oldKey} to ${newKey}`);
 
-            // We do NOT delete the old object immediately. 
-            // This allows the client to keep using the old Signed URL (pointing to temp/) 
-            // until the client refetches the document and gets the new Signed URL (pointing to uploads/).
-            // S3 Lifecycle policies should be configured to clean up 'temp/' objects after 1 day.
+            // Delete old
+            await s3Client.send(new DeleteObjectCommand({
+                Bucket: bucket,
+                Key: oldKey
+            }));
+            console.log(`Successfully deleted ${oldKey} from temp/`);
 
             const newUrl = url.replace('temp/', 'uploads/');
             mapping[url] = newUrl;
