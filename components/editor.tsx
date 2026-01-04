@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 import { Bold, Italic, List, ListOrdered, Code, Heading1, Heading2, Image as ImageIcon, Loader2, Link as LinkIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
+import { optimizeImage } from "@/lib/image-optimization";
+import { AlertDialog } from "./ui/alert-dialog";
 
 interface EditorProps {
   content: any;
@@ -18,6 +20,15 @@ interface EditorProps {
 
 export function Editor({ content, editable, onChange, onImageUpload }: EditorProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const [alertState, setAlertState] = useState<{ isOpen: boolean; title: string; message: string }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
+
+  const showAlert = (title: string, message: string) => {
+    setAlertState({ isOpen: true, title, message });
+  };
 
   const editor = useEditor({
     extensions: [
@@ -58,9 +69,12 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
 
       setIsUploading(true);
       try {
-        const presigned = await getPresignedUrl(file.name, file.type);
+        // Optimize image before upload
+        const optimizedFile = await optimizeImage(file);
+        
+        const presigned = await getPresignedUrl(optimizedFile.name, optimizedFile.type);
         if (!presigned) {
-            alert("Failed to get upload URL. Check AWS config.");
+            showAlert("Configuration Error", "Failed to get upload URL. Check AWS config.");
             return;
         }
 
@@ -69,9 +83,9 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
         try {
           const uploadRes = await fetch(url, {
             method: "PUT",
-            body: file,
+            body: optimizedFile,
             headers: { 
-              "Content-Type": file.type,
+              "Content-Type": optimizedFile.type,
             }
           });
 
@@ -80,7 +94,7 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
           }
         } catch (uploadError) {
           console.error("S3 Upload Error:", uploadError);
-          alert("Upload failed: Check console for CORS or Network errors.");
+          showAlert("Upload Failed", "Check console for CORS or Network errors.");
           return;
         }
 
@@ -101,8 +115,17 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
         }
 
       } catch (e) {
-        console.error(e);
-        alert("Upload failed");
+        if (e instanceof Error) {
+          if (e.message === 'NOT_AN_IMAGE' || e.message === 'Failed to load image') {
+            showAlert("Invalid Image", "Please upload a valid image file (JPEG, PNG, WebP, etc.).");
+          } else {
+            console.error(e);
+            showAlert("Upload Error", e.message);
+          }
+        } else {
+          console.error(e);
+          showAlert("Upload Error", "An unexpected error occurred during upload.");
+        }
       } finally {
         setIsUploading(false);
       }
@@ -189,6 +212,12 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
         </div>
       )}
       <EditorContent editor={editor} />
+      <AlertDialog
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState((s) => ({ ...s, isOpen: false }))}
+        title={alertState.title}
+        description={alertState.message}
+      />
     </div>
   );
 }
