@@ -59,6 +59,13 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
     }
   }, [editable, editor]);
 
+  // Update content if prop changes (only when not editing to avoid overwriting unsaved changes)
+  useEffect(() => {
+    if (editor && !editable && content !== editor.getJSON()) {
+         editor.commands.setContent(content);
+    }
+  }, [content, editable, editor]);
+
   const addImage = async () => {
     const input = document.createElement('input');
     input.type = 'file';
