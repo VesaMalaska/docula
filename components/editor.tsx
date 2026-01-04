@@ -2,7 +2,7 @@
 
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import TiptapImage from "@tiptap/extension-image";
+import { ResizableImage } from "./editor/resizable-image";
 import Link from "@tiptap/extension-link";
 import { useEffect, useState } from "react";
 import { Bold, Italic, List, ListOrdered, Code, Heading1, Heading2, Image as ImageIcon, Loader2, Link as LinkIcon } from "lucide-react";
@@ -22,7 +22,7 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
   const editor = useEditor({
     extensions: [
         StarterKit, 
-        TiptapImage,
+        ResizableImage,
         Link.configure({
             openOnClick: false,
             autolink: true,
