@@ -221,7 +221,7 @@ export default function DocPage() {
 
   return (
     <div className="mx-auto max-w-4xl relative">
-      <Breadcrumbs path={doc.path || []} currentTitle={doc.title} />
+      <Breadcrumbs documentId={doc.id} title={doc.title} />
       
       {isLockedByOther && (
           <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">

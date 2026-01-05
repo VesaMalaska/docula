@@ -8,38 +8,41 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 interface BreadcrumbsProps {
-  path: string[];
-  currentTitle: string;
+  documentId: string;
+  title: string;
 }
 
-export function Breadcrumbs({ path, currentTitle }: BreadcrumbsProps) {
+export function Breadcrumbs({ documentId, title }: BreadcrumbsProps) {
   const { data: tree } = useQuery({
     queryKey: ["sidebar-tree"],
     queryFn: getSidebarTree,
   });
 
-  const resolvedPath = useMemo(() => {
+  const breadcrumbs = useMemo(() => {
     if (!tree) return [];
 
-    const findNode = (id: string, nodes: SidebarNode[]): SidebarNode | null => {
+    const findPath = (
+      targetId: string, 
+      nodes: SidebarNode[], 
+      currentPath: { id: string; title: string }[]
+    ): { id: string; title: string }[] | null => {
       for (const node of nodes) {
-        if (node.id === id) return node;
+        if (node.id === targetId) {
+          return currentPath;
+        }
         if (node.children) {
-          const found = findNode(id, node.children);
+          const found = findPath(targetId, node.children, [
+            ...currentPath,
+            { id: node.id, title: node.title },
+          ]);
           if (found) return found;
         }
       }
       return null;
     };
 
-    return path.map((id) => {
-      const node = findNode(id, tree);
-      return {
-        id,
-        title: node?.title || "Unknown",
-      };
-    });
-  }, [path, tree]);
+    return findPath(documentId, tree, []) || [];
+  }, [documentId, tree]);
 
   return (
     <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
@@ -51,7 +54,7 @@ export function Breadcrumbs({ path, currentTitle }: BreadcrumbsProps) {
         <span className="sr-only">Home</span>
       </Link>
 
-      {resolvedPath.map((item) => (
+      {breadcrumbs.map((item) => (
         <div key={item.id} className="flex items-center gap-1">
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
           <Link 
@@ -65,7 +68,7 @@ export function Breadcrumbs({ path, currentTitle }: BreadcrumbsProps) {
 
       <div className="flex items-center gap-1 text-foreground font-medium">
         <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate max-w-[200px]">{currentTitle}</span>
+        <span className="truncate max-w-[200px]">{title}</span>
       </div>
     </nav>
   );
