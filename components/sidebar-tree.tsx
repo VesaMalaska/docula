@@ -140,14 +140,16 @@ function TreeNode({
 
         {/* Actions - visible on group hover */}
         <div className="invisible group-hover:visible flex items-center gap-1">
-            <button 
-                onClick={(e) => createChild(e)}
-                disabled={isCreating}
-                className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted"
-                title="Add Child Page"
-            >
-                {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
-            </button>
+            {level < 3 && (
+                <button 
+                    onClick={(e) => createChild(e)}
+                    disabled={isCreating}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted"
+                    title="Add Child Page"
+                >
+                    {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
+                </button>
+            )}
             <button 
                 onClick={(e) => deleteDoc(e)}
                 disabled={isDeleting}
