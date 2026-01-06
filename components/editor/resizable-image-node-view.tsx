@@ -11,7 +11,9 @@ export const ResizableImageNodeView = (props: NodeViewProps) => {
 
   useEffect(() => {
     if (initialWidth) {
-      setWidth(initialWidth);
+      requestAnimationFrame(() => {
+        setWidth(initialWidth);
+      });
     }
   }, [initialWidth]);
 

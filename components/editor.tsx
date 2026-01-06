@@ -12,8 +12,10 @@ import { optimizeImage } from "@/lib/image-optimization";
 import { AlertDialog } from "./ui/alert-dialog";
 
 interface EditorProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any;
   editable: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange?: (content: any) => void;
   onImageUpload?: (url: string) => void;
 }
@@ -32,7 +34,10 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
 
   const editor = useEditor({
     extensions: [
-        StarterKit, 
+        StarterKit.configure({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            link: false as any, // Disable internal link extension to avoid duplicate
+        }), 
         ResizableImage,
         Link.configure({
             openOnClick: false,
@@ -61,8 +66,14 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
 
   // Update content if prop changes (only when not editing to avoid overwriting unsaved changes)
   useEffect(() => {
-    if (editor && !editable && content !== editor.getJSON()) {
-         editor.commands.setContent(content);
+    if (editor && !editable) {
+        // Deep comparison to avoid unnecessary updates
+        const currentContent = editor.getJSON();
+        if (JSON.stringify(content) !== JSON.stringify(currentContent)) {
+             setTimeout(() => {
+                 editor.commands.setContent(content);
+             }, 0);
+        }
     }
   }, [content, editable, editor]);
 

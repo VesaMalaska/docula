@@ -5,8 +5,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function extractImageUrls(content: any): string[] {
     const urls: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function traverse(node: any) {
         if (!node) return;
         if (node.type === 'image' && node.attrs?.src) {
@@ -20,12 +22,14 @@ export function extractImageUrls(content: any): string[] {
     return urls;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function replaceImageUrls(content: any, mapping: Record<string, string>): any {
     if (!content) return content;
     
     // Deep clone to avoid mutating original state
     const newContent = JSON.parse(JSON.stringify(content));
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function traverse(node: any) {
         if (!node) return;
         if (node.type === 'image' && node.attrs?.src) {
@@ -41,12 +45,14 @@ export function replaceImageUrls(content: any, mapping: Record<string, string>):
     return newContent;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function stripImageParams(content: any): any {
     if (!content) return content;
     
     // Deep clone
     const newContent = JSON.parse(JSON.stringify(content));
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function traverse(node: any) {
         if (!node) return;
         if (node.type === 'image' && node.attrs?.src) {
@@ -55,7 +61,7 @@ export function stripImageParams(content: any): any {
                 // Reset search (query params) to empty
                 url.search = "";
                 node.attrs.src = url.toString();
-            } catch (e) {
+            } catch {
                 // Invalid URL, ignore
             }
         }
