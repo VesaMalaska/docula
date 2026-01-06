@@ -1,11 +1,12 @@
 "use client";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { LogOut, Plus, Loader2, X } from "lucide-react";
+import { LogOut, Plus, Loader2, X, Trash2 } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ModeToggle } from "./mode-toggle";
 
 interface SidebarProps {
@@ -84,6 +85,17 @@ export function Sidebar({ onClose }: SidebarProps) {
           <LogOut className="h-4 w-4" />
           Logout
         </button>
+        
+        <div className="mt-2 pt-2 border-t border-border">
+             <Link 
+                href="/trash"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={onClose}
+             >
+                <Trash2 className="h-4 w-4" />
+                Trashbin
+            </Link>
+        </div>
       </div>
     </aside>
   );

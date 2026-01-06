@@ -76,6 +76,7 @@ export default function DocPage() {
   const queryClient = useQueryClient();
 
   const [isEditing, setIsEditing] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [content, setContent] = useState<any>(null);
   const [title, setTitle] = useState("");
   const [sessionImages, setSessionImages] = useState<string[]>([]);
@@ -92,6 +93,7 @@ export default function DocPage() {
   useEffect(() => {
     if (doc) {
       if (!isEditing) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setContent(doc.content);
           setTitle(doc.title);
           setSessionImages([]);

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, MouseEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getSidebarTree, createDocument, deleteDocument } from "@/lib/actions/document";
+import { AlertDialog } from "@/components/ui/alert-dialog";
 import { SidebarNode } from "@/lib/types";
 import { ChevronRight, ChevronDown, FileText, Plus, Trash2, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -75,9 +77,10 @@ function TreeNode({
 
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { user } = useAuth();
 
   const { mutate: createChild, isPending: isCreating } = useMutation({
-    mutationFn: (e: React.MouseEvent) => {
+    mutationFn: (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       return createDocument(node.id);
@@ -90,13 +93,11 @@ function TreeNode({
   });
 
   const { mutate: deleteDoc, isPending: isDeleting } = useMutation({
-    mutationFn: async (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!confirm("Are you sure you want to delete this page?")) {
-        throw new Error("Cancelled");
-      }
-      return deleteDocument(node.id);
+    mutationFn: async () => {
+      // Assuming we have access to user here, but sidebar-tree doesn't import useAuth directly
+      // Let's fix that
+      if (!user) return; 
+      return deleteDocument(node.id, user.uid);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] });
@@ -106,6 +107,8 @@ function TreeNode({
         // cancelled
     }
   });
+
+  const [showDeleteAlert, setShowDeleteAlert] = useState(false);
 
   return (
     <div>
@@ -151,7 +154,11 @@ function TreeNode({
                 </button>
             )}
             <button 
-                onClick={(e) => deleteDoc(e)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowDeleteAlert(true);
+                }}
                 disabled={isDeleting}
                 className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-muted"
                 title="Delete Page"
@@ -174,6 +181,16 @@ function TreeNode({
           ))}
         </div>
       )}
+      
+      <AlertDialog
+        isOpen={showDeleteAlert}
+        onClose={() => setShowDeleteAlert(false)}
+        title="Delete Page"
+        description="Are you sure you want to delete this page? This action cannot be undone."
+        onAction={() => deleteDoc()}
+        variant="destructive"
+        actionLabel="Delete"
+      />
     </div>
   );
 }

@@ -142,3 +142,147 @@ export async function deleteImages(urls: string[]) {
         }
     }));
 }
+
+export async function softDeleteImages(urls: string[]) {
+    if (!urls || urls.length === 0) return;
+    const bucket = process.env.AWS_BUCKET_NAME;
+    if (!bucket) {
+        console.warn("AWS_BUCKET_NAME is not defined");
+        return;
+    }
+
+    await Promise.all(urls.map(async (url) => {
+        try {
+            const urlObj = new URL(url);
+            const path = decodeURIComponent(urlObj.pathname);
+            
+            let key = "";
+            // Handle both temp and uploads (and potentially others if they exist)
+            // We strip the leading slash if it exists
+            const rawKey = path.startsWith('/') ? path.substring(1) : path;
+            
+            if (rawKey.startsWith('temp/') || rawKey.startsWith('uploads/')) {
+                key = rawKey;
+            } else {
+                // Fallback for full paths just in case, though usually we expect controlled prefixes
+                key = rawKey;
+            }
+
+            if (!key) return;
+
+            const newKey = `deleted/${key}`; // e.g. deleted/uploads/my-image.png
+
+            console.log(`Soft deleting (moving) S3 object: ${key} -> ${newKey} in bucket ${bucket}`);
+
+            // Copy
+            const copySource = `/${bucket}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+            
+            await s3Client.send(new CopyObjectCommand({
+                Bucket: bucket,
+                CopySource: copySource,
+                Key: newKey,
+            }));
+            console.log(`Successfully copied ${key} to ${newKey}`);
+
+            // Delete old
+            await s3Client.send(new DeleteObjectCommand({
+                Bucket: bucket,
+                Key: key
+            }));
+            console.log(`Successfully deleted ${key} from original location`);
+
+        } catch (error) {
+            console.error(`Failed to soft delete image: ${url}`, error);
+        }
+    }));
+}
+
+export async function permanentDeleteImages(urls: string[]) {
+    if (!urls || urls.length === 0) return;
+    const bucket = process.env.AWS_BUCKET_NAME;
+    if (!bucket) return;
+
+    await Promise.all(urls.map(async (url) => {
+        try {
+            const urlObj = new URL(url);
+            const path = decodeURIComponent(urlObj.pathname);
+            
+            // We expect the original URL here (e.g. uploads/image.png)
+            // But the file is actually at deleted/uploads/image.png
+            let key = "";
+            const rawKey = path.startsWith('/') ? path.substring(1) : path;
+            
+            if (rawKey.startsWith('temp/') || rawKey.startsWith('uploads/')) {
+                key = `deleted/${rawKey}`;
+            } else {
+                // If it's already in deleted/ for some reason (unlikely given how we store URLs)
+                if (rawKey.startsWith('deleted/')) {
+                    key = rawKey;
+                } else {
+                   // Fallback: try to delete from deleted/ + rawKey
+                   key = `deleted/${rawKey}`;
+                }
+            }
+
+            console.log(`Permanently deleting S3 object: ${key} from bucket ${bucket}`);
+            await s3Client.send(new DeleteObjectCommand({
+                Bucket: bucket,
+                Key: key
+            }));
+            console.log(`Successfully permanently deleted ${key}`);
+        } catch (error) {
+            console.error(`Failed to permanently delete image: ${url}`, error);
+        }
+    }));
+}
+
+export async function restoreImages(urls: string[]) {
+    if (!urls || urls.length === 0) return;
+    const bucket = process.env.AWS_BUCKET_NAME;
+    if (!bucket) {
+        console.warn("AWS_BUCKET_NAME is not defined");
+        return;
+    }
+
+    await Promise.all(urls.map(async (url) => {
+        try {
+            const urlObj = new URL(url);
+            const path = decodeURIComponent(urlObj.pathname);
+            
+            // Original key (e.g. uploads/image.png)
+            // But currently living at deleted/uploads/image.png
+            let key = "";
+            const rawKey = path.startsWith('/') ? path.substring(1) : path;
+            
+            if (rawKey.startsWith('temp/') || rawKey.startsWith('uploads/')) {
+                key = rawKey;
+            } else {
+                return;
+            }
+
+            const deletedKey = `deleted/${key}`;
+            
+            console.log(`Restoring (moving) S3 object: ${deletedKey} -> ${key} in bucket ${bucket}`);
+
+            // Copy
+            const copySource = `/${bucket}/${encodeURIComponent(deletedKey).replace(/%2F/g, '/')}`;
+            
+            await s3Client.send(new CopyObjectCommand({
+                Bucket: bucket,
+                CopySource: copySource,
+                Key: key,
+            }));
+            console.log(`Successfully copied ${deletedKey} to ${key}`);
+
+            // Delete deleted/ version
+            await s3Client.send(new DeleteObjectCommand({
+                Bucket: bucket,
+                Key: deletedKey
+            }));
+            console.log(`Successfully deleted ${deletedKey} from trash`);
+
+        } catch (error) {
+            console.error(`Failed to restore image: ${url}`, error);
+        }
+    }));
+}

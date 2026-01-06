@@ -9,10 +9,12 @@ import {
   runTransaction,
   serverTimestamp, 
   query,
-  orderBy
+  orderBy,
+  where,
+  deleteDoc
 } from "firebase/firestore";
 import { Document, SidebarNode } from "@/lib/types";
-import { getPresignedGetUrl } from "./s3";
+import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
 
 export async function createDocument(parentId: string | null = null) {
@@ -89,11 +91,14 @@ export async function getDocument(id: string): Promise<Document | null> {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractLinks(content: any): string[] {
   const links = new Set<string>();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function traverse(node: any) {
     if (node.marks) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       node.marks.forEach((mark: any) => {
         if (mark.type === 'link') {
           const href = mark.attrs.href;
@@ -115,6 +120,7 @@ function extractLinks(content: any): string[] {
 
 export async function updateDocument(id: string, data: Partial<Document>) {
   const docRef = doc(db, "documents", id);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
   const { id: _, ...updateData } = data as any;
   updateData.updatedAt = serverTimestamp();
 
@@ -168,9 +174,87 @@ export async function updateDocument(id: string, data: Partial<Document>) {
   }
 }
 
-export async function deleteDocument(id: string) {
+export async function deleteDocument(id: string, userId: string = "unknown") {
   const docRef = doc(db, "documents", id);
-  await updateDoc(docRef, { deleted: true });
+  
+  // Fetch document content to find images
+  const docSnap = await getDoc(docRef);
+  if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data.content) {
+          const imageUrls = extractImageUrls(data.content);
+          if (imageUrls.length > 0) {
+              await softDeleteImages(imageUrls);
+          }
+      }
+  }
+
+  await updateDoc(docRef, { 
+      deleted: true,
+      deletedAt: serverTimestamp(),
+      deletedBy: userId
+  });
+}
+
+export async function getDeletedDocuments(): Promise<Document[]> {
+    try {
+        const q = query(
+            collection(db, "documents"), 
+            where("deleted", "==", true),
+            orderBy("deletedAt", "desc")
+        );
+        const querySnapshot = await getDocs(q);
+        const docs: Document[] = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            docs.push({ id: doc.id, ...data } as Document);
+        });
+        console.log("Fetched deleted documents:", docs);
+        return docs;
+    } catch (error) {
+        console.error("Error fetching deleted documents:", error);
+        throw error;
+    }
+}
+
+export async function restoreDocument(id: string) {
+    const docRef = doc(db, "documents", id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.content) {
+            const imageUrls = extractImageUrls(data.content);
+            if (imageUrls.length > 0) {
+                await restoreImages(imageUrls);
+            }
+        }
+    }
+    await updateDoc(docRef, { 
+        deleted: false,
+        deletedAt: null,
+        deletedBy: null
+    });
+}
+
+export async function permanentlyDeleteDocument(id: string) {
+    const docRef = doc(db, "documents", id);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        // Permanently delete images from "deleted/" folder
+        if (data.content) {
+            const imageUrls = extractImageUrls(data.content);
+            if (imageUrls.length > 0) {
+                // We need to construct the keys that are in the deleted/ folder
+                // The softDeleteImages moved them to deleted/ prefix
+                // The original URLs (e.g. key) mapping logic needs to handle this.
+                // However, our helper is on S3 side. Let's make a specific helper for this.
+                await permanentDeleteImages(imageUrls);
+            }
+        }
+        await deleteDoc(docRef);
+    }
 }
 
 export async function getSidebarTree(): Promise<SidebarNode[]> {

@@ -3,6 +3,7 @@ import { Timestamp } from "firebase/firestore";
 export interface Document {
   id: string;
   title: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any; // Tiptap JSON content
   parentId: string | null;
   path: string[];
@@ -17,6 +18,9 @@ export interface Document {
   } | null;
   outboundLinks: string[];
   backlinks: string[];
+  deleted?: boolean;
+  deletedAt?: Timestamp | null;
+  deletedBy?: string | null;
 }
 
 export interface SidebarNode {
