@@ -1,20 +1,20 @@
 "use client";
 
-import { useAuth } from "@/components/providers/auth-provider";
-import { LogOut, Plus, Loader2, X, Trash2 } from "lucide-react";
+
+import { Plus, Loader2, X, Trash2 } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ModeToggle } from "./mode-toggle";
+
 
 interface SidebarProps {
   onClose?: () => void;
 }
 
 export function Sidebar({ onClose }: SidebarProps) {
-  const { user, logout } = useAuth();
+  // const { user, logout } = useAuth(); // Removed as moved to Header
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -63,30 +63,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       </div>
 
       <div className="p-4 border-t border-border bg-background/50">
-        <div className="flex items-center justify-between gap-2 mb-4">
-           <div className="flex items-center gap-2 overflow-hidden">
-            {user?.photoURL && (
-                <img
-                src={user.photoURL}
-                alt="Avatar"
-                className="w-8 h-8 rounded-full"
-                />
-            )}
-            <span className="text-sm font-medium truncate flex-1 text-foreground">
-                {user?.displayName || user?.email}
-            </span>
-           </div>
-           <ModeToggle />
-        </div>
-        <button
-          onClick={logout}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
-        >
-          <LogOut className="h-4 w-4" />
-          Logout
-        </button>
-        
-        <div className="mt-2 pt-2 border-t border-border">
+        <div className="mt-0">
              <Link 
                 href="/trash"
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
