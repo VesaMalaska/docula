@@ -18,7 +18,7 @@ export function Header({ onMenuClick, className }: HeaderProps) {
       <div className="flex items-center gap-2">
         <button
           onClick={onMenuClick}
-          className="p-2 -ml-2 text-muted-foreground hover:text-foreground lg:hidden"
+          className="p-2 -ml-2 text-muted-foreground hover:text-foreground lg:hidden cursor-pointer"
         >
           <Menu className="h-6 w-6" />
         </button>

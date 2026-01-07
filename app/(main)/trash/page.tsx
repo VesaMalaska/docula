@@ -47,7 +47,7 @@ export default function TrashbinPage() {
     return (
         <div className="flex flex-col h-full bg-background">
             <header className="flex items-center gap-4 border-b px-6 py-4">
-                <Link href="/" className="text-muted-foreground hover:text-foreground">
+                <Link href="/" className="text-muted-foreground hover:text-foreground cursor-pointer">
                     <ArrowLeft className="h-5 w-5" />
                 </Link>
                 <h1 className="text-xl font-semibold">Trashbin</h1>
@@ -89,7 +89,7 @@ export default function TrashbinPage() {
                                     <button 
                                         onClick={() => restore(doc.id)}
                                         disabled={isRestoring || isDeleting}
-                                        className="p-2 hover:bg-muted rounded text-green-600 hover:text-green-700 transition-colors"
+                                        className="p-2 hover:bg-muted rounded text-green-600 hover:text-green-700 transition-colors cursor-pointer"
                                         title="Restore"
                                     >
                                         <RefreshCw className="h-4 w-4" />
@@ -97,7 +97,7 @@ export default function TrashbinPage() {
                                     <button 
                                         onClick={() => setDocumentToDelete(doc.id)}
                                         disabled={isRestoring || isDeleting}
-                                        className="p-2 hover:bg-muted rounded text-destructive hover:text-red-700 transition-colors"
+                                        className="p-2 hover:bg-muted rounded text-destructive hover:text-red-700 transition-colors cursor-pointer"
                                         title="Delete Forever"
                                     >
                                         <Trash2 className="h-4 w-4" />

@@ -28,7 +28,7 @@ export function UserButton() {
     <div className="relative" ref={containerRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-full p-1 hover:bg-accent transition-colors focus:outline-none"
+        className="flex items-center gap-2 rounded-full p-1 hover:bg-accent transition-colors focus:outline-none cursor-pointer"
         aria-haspopup="true"
         aria-expanded={isOpen}
       >
@@ -60,7 +60,7 @@ export function UserButton() {
           <div className="space-y-1">
             <button
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
             >
               {theme === "dark" ? (
                 <>
@@ -80,7 +80,7 @@ export function UserButton() {
                   setIsOpen(false);
                   logout();
               }}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
             >
               <LogOut className="h-4 w-4" />
               <span>Logout</span>

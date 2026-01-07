@@ -35,7 +35,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             <button
             onClick={() => createDoc()}
             disabled={isPending}
-            className="rounded p-1 hover:bg-accent hover:text-accent-foreground text-muted-foreground disabled:opacity-50"
+            className="rounded p-1 hover:bg-accent hover:text-accent-foreground text-muted-foreground disabled:opacity-50 cursor-pointer"
             title="New Document"
             >
             {isPending ? (
@@ -46,7 +46,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             </button>
             <button
                 onClick={onClose}
-                className="p-1 lg:hidden text-muted-foreground hover:text-foreground"
+                className="p-1 lg:hidden text-muted-foreground hover:text-foreground cursor-pointer"
             >
                 <X className="h-5 w-5" />
             </button>
@@ -66,7 +66,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         <div className="mt-0">
              <Link 
                 href="/trash"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
                 onClick={onClose}
              >
                 <Trash2 className="h-4 w-4" />

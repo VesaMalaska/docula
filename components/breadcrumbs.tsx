@@ -48,7 +48,7 @@ export function Breadcrumbs({ documentId, title }: BreadcrumbsProps) {
     <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
       <Link 
         href="/" 
-        className="flex items-center gap-1 hover:text-foreground transition-colors"
+        className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
       >
         <Home className="h-3.5 w-3.5" />
         <span className="sr-only">Home</span>
@@ -59,7 +59,7 @@ export function Breadcrumbs({ documentId, title }: BreadcrumbsProps) {
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
           <Link 
             href={`/doc/${item.id}`}
-            className="hover:text-foreground transition-colors truncate max-w-[150px]"
+            className="hover:text-foreground transition-colors truncate max-w-[150px] cursor-pointer"
           >
             {item.title}
           </Link>

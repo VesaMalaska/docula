@@ -36,7 +36,7 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
             {docIds.map(id => {
                 const title = findTitle(id, tree) || "Unknown Doc";
                 return (
-                    <Link key={id} href={`/doc/${id}`} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors">
+                    <Link key={id} href={`/doc/${id}`} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors cursor-pointer">
                         {title}
                     </Link>
                 );
@@ -262,14 +262,14 @@ export default function DocPage() {
              <>
                 <button
                   onClick={handleCancel}
-                  className="px-3 py-1 text-sm text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                  className="px-3 py-1 text-sm text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => save()}
                   disabled={isSaving}
-                  className="flex items-center gap-1 rounded bg-indigo-600 dark:bg-indigo-500 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-1 rounded bg-indigo-600 dark:bg-indigo-500 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Save
@@ -279,7 +279,7 @@ export default function DocPage() {
              <button
                 onClick={handleEdit}
                 disabled={!!isLockedByOther}
-                className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
              >
                 <Edit2 className="h-4 w-4" />
                 {isLockedByOther ? "Locked" : "Edit"}

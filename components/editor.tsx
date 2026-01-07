@@ -245,7 +245,7 @@ function ToolbarBtn({ onClick, isActive, icon }: { onClick: () => void; isActive
     <button
       onClick={onClick}
       className={cn(
-        "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors",
+        "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer",
         isActive && "bg-accent text-accent-foreground"
       )}
     >
