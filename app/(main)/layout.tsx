@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Loader2, Menu } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
+import { Header } from "@/components/header";
 import { cn } from "@/lib/utils";
 
 export default function MainLayout({
@@ -49,15 +50,7 @@ export default function MainLayout({
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b border-border px-4 lg:hidden shrink-0">
-            <button 
-                onClick={() => setIsSidebarOpen(true)}
-                className="p-2 -ml-2 text-muted-foreground hover:text-foreground"
-            >
-                <Menu className="h-6 w-6" />
-            </button>
-            <span className="ml-2 font-bold text-foreground">Docula</span>
-        </header>
+        <Header onMenuClick={() => setIsSidebarOpen(true)} />
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
             {children}
         </main>

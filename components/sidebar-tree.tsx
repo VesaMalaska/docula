@@ -127,14 +127,14 @@ function TreeNode({
             toggleNode(node.id);
           }}
           className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground transition-transform",
+            "h-4 w-4 shrink-0 text-muted-foreground hover:text-foreground transition-transform cursor-pointer",
             !hasChildren && "invisible"
           )}
         >
           {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </button>
         
-        <Link href={`/doc/${node.id}`} className="flex-1 truncate block mr-2">
+        <Link href={`/doc/${node.id}`} className="flex-1 truncate block mr-2 cursor-pointer">
             <div className="flex items-center gap-2">
                 <FileText className={cn("h-3.5 w-3.5", isActive ? "text-foreground" : "text-muted-foreground")} />
                 <span className="truncate">{node.title}</span>
@@ -147,7 +147,7 @@ function TreeNode({
                 <button 
                     onClick={(e) => createChild(e)}
                     disabled={isCreating}
-                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted"
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted cursor-pointer"
                     title="Add Child Page"
                 >
                     {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
@@ -160,7 +160,7 @@ function TreeNode({
                   setShowDeleteAlert(true);
                 }}
                 disabled={isDeleting}
-                className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-muted"
+                className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-muted cursor-pointer"
                 title="Delete Page"
             >
                 {isDeleting ? <Loader2 className="h-3 w-3 animate-spin"/> : <Trash2 className="h-3 w-3" />}
