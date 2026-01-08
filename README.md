@@ -1,26 +1,28 @@
 # Docula
 
-**Docula** is a lightweight, high-performance documentation platform designed to replace heavyweight solutions like Confluence for engineering teams. It combines the structured organization of a traditional wiki with the networked thought capabilities of tools like Obsidian.
+**Docula** is a lightweight, high-performance documentation platform designed for engineering teams. It combines the structured organization of a traditional wiki with the networked thought capabilities of tools like Obsidian.
 
 Built with a philosophy of **"Speed and Solidity,"** Docula prioritizes sub-second load times and rigid data integrity through document locking, ensuring a seamless and conflict-free writing experience.
 
 ## 🚀 Key Features
 
 - **Hybrid Navigation:** Organize content hierarchically with infinite nesting while leveraging bi-directional backlinks to discover related documents.
-- **Concurrency Control:** robust document locking mechanism prevents overwrite conflicts. If a teammate is editing, the document is locked for them.
-- **High-Performance Editor:** Powered by Tiptap, supporting Markdown shortcuts, code blocks, and drag-and-drop image uploads (stored via AWS S3).
-- **Instant Search & Access:** (Planned) Fast client-side search and quick navigation.
-- **Modern UI:** Clean, dark/light mode supported interface built with Shadcn/UI and TailwindCSS.
+- **Concurrency Control:** Heartbeat-based document locking prevent overwrite conflicts. If a teammate is editing, the document is locked for them.
+- **High-Performance Editor:** Powered by Tiptap, supporting Markdown shortcuts, code blocks, and resizable images.
+- **Image Optimization:** Automatic conversion of uploaded images to WebP and intelligent resizing to ensure performance and storage efficiency.
+- **Trash & Recovery:** Secure soft-delete mechanism for documents and associated images, allowing for easy restoration.
+- **Instant Search & Access:** Fast client-side search and quick navigation.
+- **Modern UI:** Clean, dark/light mode supported interface built with Shadcn/UI and TailwindCSS 4.
 
 ## 🛠 Tech Stack
 
-- **Framework:** Next.js 16 (App Router)
+- **Framework:** Next.js 16.1 (App Router)
 - **Language:** TypeScript
-- **Frontend:** React 19, TailwindCSS, Shadcn/UI, Lucide Icons
-- **State Management:** TanStack Query (Server), Zustand (Client)
+- **Frontend:** React 19.2, TailwindCSS 4, Shadcn/UI, Lucide Icons
+- **State Management:** TanStack Query (Server State)
 - **Editor:** Tiptap (Headless)
 - **Backend:** Firebase Authentication, Firestore
-- **Storage:** AWS S3
+- **Storage:** AWS S3 (with Presigned URLs and Soft-Delete Support)
 - **Deployment:** Vercel
 
 ## 📦 Getting Started
@@ -56,8 +58,6 @@ Built with a philosophy of **"Speed and Solidity,"** Docula prioritizes sub-seco
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
     NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-    FIREBASE_CLIENT_EMAIL=your_service_account_email
-    FIREBASE_PRIVATE_KEY="your_service_account_private_key"
 
     # AWS S3 (For Images)
     AWS_REGION=your_aws_region
@@ -76,10 +76,11 @@ Built with a philosophy of **"Speed and Solidity,"** Docula prioritizes sub-seco
 
 ## 📂 Project Structure
 
-- `/app`: App Router pages and layouts.
-- `/components`: Reusable UI components and complex feature components (Editor, Sidebar).
-- `/lib`: Utility functions, Firebase configuration, and Server Actions.
-- `/hooks`: Custom React hooks (e.g., `useHeartbeat` for locking).
+- `/app`: Next.js App Router pages and layouts. Includes `(main)` group for the core application.
+- `/components`: Reusable UI components and feature-specific components (Editor, Sidebar, Header, etc.).
+- `/lib`: Core logic, including server actions (`/actions`), Firebase config, types, and utility functions.
+- `/hooks`: Custom React hooks, such as `useHeartbeat` for document locking.
+- `/public`: Static assets.
 
 ## 🤝 Contributing
 
