@@ -57,7 +57,7 @@ function DocSkeleton() {
                 <div className="h-10 bg-gray-200 dark:bg-zinc-800 rounded w-1/2" />
                 <div className="h-8 bg-gray-200 dark:bg-zinc-800 rounded w-20" />
             </div>
-            <div className="space-y-4">
+            <div className="space-y-4">              
                 <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
                 <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-5/6" />
                 <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4/6" />
@@ -228,7 +228,7 @@ export default function DocPage() {
       {isLockedByOther && (
           <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
             <div className="flex">
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <AlertCircle className="h-5 w-5 text-amber-400 dark:text-amber-500" aria-hidden="true" />
               </div>
               <div className="ml-3">
