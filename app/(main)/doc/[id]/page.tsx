@@ -44,26 +44,27 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
         </div>
     );
 }
+import { Skeleton } from "@/components/ui/skeleton";
 
 function DocSkeleton() {
     return (
-        <div className="mx-auto max-w-4xl animate-pulse">
+        <div className="mx-auto max-w-4xl">
             <div className="flex items-center gap-2 mb-4">
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-16" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-16" />
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-16" />
             </div>
             <div className="mb-6 border-b dark:border-zinc-800 pb-4 flex justify-between items-center">
-                <div className="h-10 bg-gray-200 dark:bg-zinc-800 rounded w-1/2" />
-                <div className="h-8 bg-gray-200 dark:bg-zinc-800 rounded w-20" />
+                <Skeleton className="h-10 w-1/2" />
+                <Skeleton className="h-8 w-20" />
             </div>
             <div className="space-y-4">              
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-5/6" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4/6" />
-                <div className="h-64 bg-gray-100 dark:bg-zinc-900/50 rounded w-full mt-8" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-4/6" />
+                <Skeleton className="h-64 w-full mt-8" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
             </div>
         </div>
     );
