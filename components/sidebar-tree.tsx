@@ -12,10 +12,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
 
-export function SidebarTree() {
+export function SidebarTree({ spaceId }: { spaceId: string }) {
   const { data: tree, isLoading, error } = useQuery({
-    queryKey: ["sidebar-tree"],
-    queryFn: getSidebarTree,
+    queryKey: ["sidebar-tree", spaceId],
+    queryFn: () => getSidebarTree(spaceId),
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
@@ -36,6 +36,7 @@ export function SidebarTree() {
           level={0} 
           isExpanded={isExpanded}
           toggleNode={toggleNode}
+          spaceId={spaceId}
         />
       ))}
       {tree?.length === 0 && (
@@ -63,16 +64,18 @@ function TreeNode({
     node, 
     level, 
     isExpanded, 
-    toggleNode 
+    toggleNode,
+    spaceId
 }: { 
     node: SidebarNode; 
     level: number;
     isExpanded: (id: string) => boolean;
     toggleNode: (id: string) => void;
+    spaceId: string;
 }) {
   const isOpen = isExpanded(node.id);
   const pathname = usePathname();
-  const isActive = pathname === `/doc/${node.id}`;
+  const isActive = pathname === `/space/${spaceId}/doc/${node.id}`;
   const hasChildren = node.children.length > 0;
 
   const queryClient = useQueryClient();
@@ -83,12 +86,12 @@ function TreeNode({
     mutationFn: (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      return createDocument(node.id);
+      return createDocument(spaceId, node.id);
     },
     onSuccess: (newId) => {
       if (!isOpen) toggleNode(node.id);
-      queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] });
-      router.push(`/doc/${newId}`);
+      queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
+      router.push(`/space/${spaceId}/doc/${newId}`);
     },
   });
 
@@ -100,8 +103,8 @@ function TreeNode({
       return deleteDocument(node.id, user.uid);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] });
-      if (isActive) router.push("/");
+      queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
+      if (isActive) router.push(`/space/${spaceId}`);
     },
     onError: () => {
         // cancelled
@@ -134,7 +137,7 @@ function TreeNode({
           {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </button>
         
-        <Link href={`/doc/${node.id}`} className="flex-1 truncate block mr-2 cursor-pointer">
+        <Link href={`/space/${spaceId}/doc/${node.id}`} className="flex-1 truncate block mr-2 cursor-pointer">
             <div className="flex items-center gap-2">
                 <FileText className={cn("h-3.5 w-3.5", isActive ? "text-foreground" : "text-muted-foreground")} />
                 <span className="truncate">{node.title}</span>
@@ -177,6 +180,7 @@ function TreeNode({
               level={level + 1} 
               isExpanded={isExpanded}
               toggleNode={toggleNode}
+              spaceId={spaceId}
             />
           ))}
         </div>

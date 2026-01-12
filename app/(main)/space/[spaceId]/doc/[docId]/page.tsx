@@ -14,9 +14,13 @@ import Link from "next/link";
 import { SidebarNode } from "@/lib/types";
 import { extractImageUrls, replaceImageUrls, stripImageParams } from "@/lib/utils";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { Skeleton } from "@/components/ui/skeleton";
 
-function BacklinksList({ docIds }: { docIds: string[] }) {
-    const { data: tree } = useQuery({ queryKey: ["sidebar-tree"], queryFn: getSidebarTree });
+function BacklinksList({ docIds, spaceId }: { docIds: string[], spaceId: string }) {
+    const { data: tree } = useQuery({ 
+        queryKey: ["sidebar-tree", spaceId], 
+        queryFn: () => getSidebarTree(spaceId) 
+    });
     
     const findTitle = (id: string, nodes: SidebarNode[]): string | null => {
         for (const node of nodes) {
@@ -36,7 +40,7 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
             {docIds.map(id => {
                 const title = findTitle(id, tree) || "Unknown Doc";
                 return (
-                    <Link key={id} href={`/doc/${id}`} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors cursor-pointer">
+                    <Link key={id} href={`/space/${spaceId}/doc/${id}`} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors cursor-pointer">
                         {title}
                     </Link>
                 );
@@ -44,7 +48,6 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
         </div>
     );
 }
-import { Skeleton } from "@/components/ui/skeleton";
 
 function DocSkeleton() {
     return (
@@ -72,7 +75,8 @@ function DocSkeleton() {
 
 export default function DocPage() {
   const params = useParams();
-  const id = params.id as string;
+  const spaceId = params.spaceId as string;
+  const id = params.docId as string;
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -210,7 +214,7 @@ export default function DocPage() {
     onSuccess: () => {
       setIsEditing(false);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
-      queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] }); 
+      queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] }); 
     },
   });
 
@@ -223,7 +227,7 @@ export default function DocPage() {
 
   return (
     <div className="mx-auto max-w-4xl relative">
-      <Breadcrumbs documentId={doc.id} title={doc.title} />
+      <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
       
       {isLockedByOther && (
           <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
@@ -303,7 +307,7 @@ export default function DocPage() {
         <div className="mt-2">
             <span className="font-semibold text-gray-900 dark:text-zinc-200">Linked to by:</span>
             {doc.backlinks?.length > 0 ? (
-                <BacklinksList docIds={doc.backlinks} />
+                <BacklinksList docIds={doc.backlinks} spaceId={spaceId} />
             ) : " None"}
         </div>
       </div>

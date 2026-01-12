@@ -1,9 +1,41 @@
 {
     "indexes": [
         {
+            "collectionGroup": "spaces",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "userIds",
+                    "arrayConfig": "CONTAINS"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
             "collectionGroup": "documents",
             "queryScope": "COLLECTION",
             "fields": [
+                {
+                    "fieldPath": "spaceId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "title",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "documents",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "spaceId",
+                    "order": "ASCENDING"
+                },
                 {
                     "fieldPath": "deleted",
                     "order": "ASCENDING"

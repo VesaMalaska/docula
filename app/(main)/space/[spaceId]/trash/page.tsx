@@ -8,16 +8,20 @@ import { useAuth } from "@/components/providers/auth-provider";
 import Link from "next/link";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { useState } from "react";
+import { useParams } from "next/navigation";
 
 
 export default function TrashbinPage() {
     const { user } = useAuth();
+    const params = useParams();
+    const spaceId = params.spaceId as string;
     const queryClient = useQueryClient();
     const [documentToDelete, setDocumentToDelete] = useState<string | null>(null);
 
     const { data: documents, isLoading, error } = useQuery({
-        queryKey: ["deleted-documents"],
-        queryFn: getDeletedDocuments,
+        queryKey: ["deleted-documents", spaceId],
+        queryFn: () => getDeletedDocuments(spaceId),
+        enabled: !!spaceId
     });
 
     if (error) {
@@ -27,15 +31,15 @@ export default function TrashbinPage() {
     const { mutate: restore, isPending: isRestoring } = useMutation({
         mutationFn: restoreDocument,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["deleted-documents"] });
-            queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] });
+            queryClient.invalidateQueries({ queryKey: ["deleted-documents", spaceId] });
+            queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
         },
     });
 
     const { mutate: removeForever, isPending: isDeleting } = useMutation({
         mutationFn: permanentlyDeleteDocument,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["deleted-documents"] });
+            queryClient.invalidateQueries({ queryKey: ["deleted-documents", spaceId] });
             setDocumentToDelete(null);
         },
     });
@@ -47,7 +51,7 @@ export default function TrashbinPage() {
     return (
         <div className="flex flex-col h-full bg-background">
             <header className="flex items-center gap-4 border-b px-6 py-4">
-                <Link href="/" className="text-muted-foreground hover:text-foreground cursor-pointer">
+                <Link href={`/space/${spaceId}`} className="text-muted-foreground hover:text-foreground cursor-pointer">
                     <ArrowLeft className="h-5 w-5" />
                 </Link>
                 <h1 className="text-xl font-semibold">Trashbin</h1>

@@ -8,14 +8,15 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 interface BreadcrumbsProps {
+  spaceId: string;
   documentId: string;
   title: string;
 }
 
-export function Breadcrumbs({ documentId, title }: BreadcrumbsProps) {
+export function Breadcrumbs({ spaceId, documentId, title }: BreadcrumbsProps) {
   const { data: tree } = useQuery({
-    queryKey: ["sidebar-tree"],
-    queryFn: getSidebarTree,
+    queryKey: ["sidebar-tree", spaceId],
+    queryFn: () => getSidebarTree(spaceId),
   });
 
   const breadcrumbs = useMemo(() => {
@@ -58,7 +59,7 @@ export function Breadcrumbs({ documentId, title }: BreadcrumbsProps) {
         <div key={item.id} className="flex items-center gap-1">
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
           <Link 
-            href={`/doc/${item.id}`}
+            href={`/space/${spaceId}/doc/${item.id}`}
             className="hover:text-foreground transition-colors truncate max-w-[150px] cursor-pointer"
           >
             {item.title}

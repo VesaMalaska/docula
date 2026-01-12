@@ -1,4 +1,4 @@
-import { type ClassValue, clsx } from "clsx"
+import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
@@ -7,65 +7,64 @@ export function cn(...inputs: ClassValue[]) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function extractImageUrls(content: any): string[] {
-    const urls: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function traverse(node: any) {
-        if (!node) return;
-        if (node.type === 'image' && node.attrs?.src) {
-            urls.push(node.attrs.src);
-        }
-        if (node.content) {
-            node.content.forEach(traverse);
-        }
+  if (!content) return [];
+  const images = new Set<string>();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function traverse(node: any) {
+    if (node.type === 'image' && node.attrs?.src) {
+      images.add(node.attrs.src);
     }
-    if (content) traverse(content);
-    return urls;
+    if (node.content) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      node.content.forEach(traverse);
+    }
+  }
+
+  traverse(content);
+  return Array.from(images);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function replaceImageUrls(content: any, mapping: Record<string, string>): any {
-    if (!content) return content;
-    
-    // Deep clone to avoid mutating original state
-    const newContent = JSON.parse(JSON.stringify(content));
+  if (!content) return content;
+  const newContent = JSON.parse(JSON.stringify(content));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function traverse(node: any) {
-        if (!node) return;
-        if (node.type === 'image' && node.attrs?.src) {
-            if (mapping[node.attrs.src]) {
-                node.attrs.src = mapping[node.attrs.src];
-            }
-        }
-        if (node.content) {
-            node.content.forEach(traverse);
-        }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function traverse(node: any) {
+    if (node.type === 'image' && node.attrs?.src) {
+      if (mapping[node.attrs.src]) {
+        node.attrs.src = mapping[node.attrs.src];
+      }
     }
-    traverse(newContent);
-    return newContent;
+    if (node.content) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      node.content.forEach(traverse);
+    }
+  }
+
+  traverse(newContent);
+  return newContent;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function stripImageParams(content: any): any {
-    if (!content) return content;
-    
-    // Deep clone
+    if(!content) return content;
     const newContent = JSON.parse(JSON.stringify(content));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function traverse(node: any) {
-        if (!node) return;
         if (node.type === 'image' && node.attrs?.src) {
             try {
                 const url = new URL(node.attrs.src);
-                // Reset search (query params) to empty
                 url.search = "";
                 node.attrs.src = url.toString();
             } catch {
-                // Invalid URL, ignore
+                // Ignore invalid URLs
             }
         }
         if (node.content) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             node.content.forEach(traverse);
         }
     }

@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSpaceMember(spaceData) {
+      return isAuthenticated() && (
+        spaceData.isPublic == true ||
+        request.auth.uid in spaceData.userIds ||
+        request.auth.uid == spaceData.ownerId
+      );
+    }
+
+    // Check membership using existing resource (for read/write) or get() (for cross-collection)
+    function canAccessSpace(spaceId) {
+       let space = get(/databases/$(database)/documents/spaces/$(spaceId));
+       return isSpaceMember(space.data);
+    }
+
+    match /spaces/{spaceId} {
+      allow create: if isAuthenticated();
+      allow read: if isSpaceMember(resource.data);
+      allow update, delete: if isAuthenticated() && (
+          request.auth.uid in resource.data.userIds || 
+          request.auth.uid == resource.data.ownerId
+      );
+    }
+
+    match /documents/{documentId} {
+      // Allow create if user has access to the target space
+      allow create: if isAuthenticated() && canAccessSpace(request.resource.data.spaceId);
+      
+      // Allow read/write if user has access to the *existing* document's space
+      allow read, update, delete: if isAuthenticated() && canAccessSpace(resource.data.spaceId);
+    }
+  }
+}
