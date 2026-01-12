@@ -15,6 +15,20 @@
             ]
         },
         {
+            "collectionGroup": "spaces",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "isPublic",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
             "collectionGroup": "documents",
             "queryScope": "COLLECTION",
             "fields": [
