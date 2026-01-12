@@ -14,9 +14,13 @@ import Link from "next/link";
 import { SidebarNode } from "@/lib/types";
 import { extractImageUrls, replaceImageUrls, stripImageParams } from "@/lib/utils";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { Skeleton } from "@/components/ui/skeleton";
 
-function BacklinksList({ docIds }: { docIds: string[] }) {
-    const { data: tree } = useQuery({ queryKey: ["sidebar-tree"], queryFn: getSidebarTree });
+function BacklinksList({ docIds, spaceId }: { docIds: string[], spaceId: string }) {
+    const { data: tree } = useQuery({ 
+        queryKey: ["sidebar-tree", spaceId], 
+        queryFn: () => getSidebarTree(spaceId) 
+    });
     
     const findTitle = (id: string, nodes: SidebarNode[]): string | null => {
         for (const node of nodes) {
@@ -36,7 +40,7 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
             {docIds.map(id => {
                 const title = findTitle(id, tree) || "Unknown Doc";
                 return (
-                    <Link key={id} href={`/doc/${id}`} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors cursor-pointer">
+                    <Link key={id} href={`/space/${spaceId}/doc/${id}`} className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors cursor-pointer">
                         {title}
                     </Link>
                 );
@@ -47,23 +51,23 @@ function BacklinksList({ docIds }: { docIds: string[] }) {
 
 function DocSkeleton() {
     return (
-        <div className="mx-auto max-w-4xl animate-pulse">
+        <div className="mx-auto max-w-4xl">
             <div className="flex items-center gap-2 mb-4">
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-16" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-16" />
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-16" />
             </div>
             <div className="mb-6 border-b dark:border-zinc-800 pb-4 flex justify-between items-center">
-                <div className="h-10 bg-gray-200 dark:bg-zinc-800 rounded w-1/2" />
-                <div className="h-8 bg-gray-200 dark:bg-zinc-800 rounded w-20" />
+                <Skeleton className="h-10 w-1/2" />
+                <Skeleton className="h-8 w-20" />
             </div>
-            <div className="space-y-4">
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-5/6" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-4/6" />
-                <div className="h-64 bg-gray-100 dark:bg-zinc-900/50 rounded w-full mt-8" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-full" />
-                <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-3/4" />
+            <div className="space-y-4">              
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-4/6" />
+                <Skeleton className="h-64 w-full mt-8" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
             </div>
         </div>
     );
@@ -71,7 +75,8 @@ function DocSkeleton() {
 
 export default function DocPage() {
   const params = useParams();
-  const id = params.id as string;
+  const spaceId = params.spaceId as string;
+  const id = params.docId as string;
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -87,7 +92,6 @@ export default function DocPage() {
   const { data: doc, isLoading } = useQuery({
     queryKey: ["doc", id],
     queryFn: () => getDocument(id),
-    refetchInterval: 30000, 
   });
 
   useEffect(() => {
@@ -210,7 +214,7 @@ export default function DocPage() {
     onSuccess: () => {
       setIsEditing(false);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
-      queryClient.invalidateQueries({ queryKey: ["sidebar-tree"] }); 
+      queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] }); 
     },
   });
 
@@ -223,12 +227,12 @@ export default function DocPage() {
 
   return (
     <div className="mx-auto max-w-4xl relative">
-      <Breadcrumbs documentId={doc.id} title={doc.title} />
+      <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
       
       {isLockedByOther && (
           <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
             <div className="flex">
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <AlertCircle className="h-5 w-5 text-amber-400 dark:text-amber-500" aria-hidden="true" />
               </div>
               <div className="ml-3">
@@ -303,7 +307,7 @@ export default function DocPage() {
         <div className="mt-2">
             <span className="font-semibold text-gray-900 dark:text-zinc-200">Linked to by:</span>
             {doc.backlinks?.length > 0 ? (
-                <BacklinksList docIds={doc.backlinks} />
+                <BacklinksList docIds={doc.backlinks} spaceId={spaceId} />
             ) : " None"}
         </div>
       </div>

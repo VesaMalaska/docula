@@ -17,7 +17,7 @@ import { Document, SidebarNode } from "@/lib/types";
 import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
 
-export async function createDocument(parentId: string | null = null) {
+export async function createDocument(spaceId: string, parentId: string | null = null) {
   let path: string[] = [];
   
   if (parentId) {
@@ -30,8 +30,9 @@ export async function createDocument(parentId: string | null = null) {
   }
 
   const newDoc = {
+    spaceId,
     title: "Untitled",
-    content: {}, 
+    content: null, 
     parentId,
     path, 
     tags: [],
@@ -102,7 +103,7 @@ function extractLinks(content: any): string[] {
       node.marks.forEach((mark: any) => {
         if (mark.type === 'link') {
           const href = mark.attrs.href;
-          if (href && href.startsWith('/doc/')) {
+          if (href && href.includes('/doc/')) {
              const id = href.split('/doc/')[1];
              if (id) links.add(id);
           }
@@ -196,10 +197,11 @@ export async function deleteDocument(id: string, userId: string = "unknown") {
   });
 }
 
-export async function getDeletedDocuments(): Promise<Document[]> {
+export async function getDeletedDocuments(spaceId: string): Promise<Document[]> {
     try {
         const q = query(
             collection(db, "documents"), 
+            where("spaceId", "==", spaceId),
             where("deleted", "==", true),
             orderBy("deletedAt", "desc")
         );
@@ -257,8 +259,12 @@ export async function permanentlyDeleteDocument(id: string) {
     }
 }
 
-export async function getSidebarTree(): Promise<SidebarNode[]> {
-  const q = query(collection(db, "documents"), orderBy("title", "asc"));
+export async function getSidebarTree(spaceId: string): Promise<SidebarNode[]> {
+  const q = query(
+      collection(db, "documents"), 
+      where("spaceId", "==", spaceId),
+      orderBy("title", "asc")
+  );
   const querySnapshot = await getDocs(q);
   
   const docs: { id: string; title: string; parentId: string | null }[] = [];
