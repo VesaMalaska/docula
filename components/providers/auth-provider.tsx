@@ -8,8 +8,9 @@ import {
   createUserWithEmailAndPassword,
   signOut 
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 interface AuthContextType {
   user: User | null;
@@ -32,10 +33,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-
-// ... imports
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
