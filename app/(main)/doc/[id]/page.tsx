@@ -88,7 +88,6 @@ export default function DocPage() {
   const { data: doc, isLoading } = useQuery({
     queryKey: ["doc", id],
     queryFn: () => getDocument(id),
-    refetchInterval: 30000, 
   });
 
   useEffect(() => {
