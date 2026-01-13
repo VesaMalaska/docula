@@ -8,16 +8,16 @@ service cloud.firestore {
 
     function isSpaceMember(spaceData) {
       return isAuthenticated() && (
-        spaceData.isPublic == true ||
-        request.auth.uid in spaceData.userIds ||
-        request.auth.uid == spaceData.ownerId
+        ('isPublic' in spaceData && spaceData.isPublic == true) ||
+        ('userIds' in spaceData && request.auth.uid in spaceData.userIds) ||
+        ('ownerId' in spaceData && request.auth.uid == spaceData.ownerId)
       );
     }
 
-    // Check membership using existing resource (for read/write) or get() (for cross-collection)
+    // Helper to Access Space Data safely
     function canAccessSpace(spaceId) {
-       let space = get(/databases/$(database)/documents/spaces/$(spaceId));
-       return isSpaceMember(space.data);
+       let spacePath = /databases/$(database)/documents/spaces/$(spaceId);
+       return exists(spacePath) && isSpaceMember(get(spacePath).data);
     }
 
     match /spaces/{spaceId} {
@@ -35,6 +35,11 @@ service cloud.firestore {
       
       // Allow read/write if user has access to the *existing* document's space
       allow read, update, delete: if isAuthenticated() && canAccessSpace(resource.data.spaceId);
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
     }
   }
 }

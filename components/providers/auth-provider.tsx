@@ -8,8 +8,9 @@ import {
   createUserWithEmailAndPassword,
   signOut 
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 interface AuthContextType {
   user: User | null;
@@ -32,10 +33,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       setLoading(false);
+
+      if (user) {
+          try {
+              // Sync user to Firestore for search/invite
+              await setDoc(doc(db, "users", user.uid), {
+                  uid: user.uid,
+                  email: user.email,
+                  displayName: user.displayName || "",
+                  photoURL: user.photoURL || "",
+                  lastSeen: serverTimestamp(),
+              }, { merge: true });
+          } catch (e) {
+              console.error("Error syncing user profile:", e);
+          }
+      }
     });
 
     return () => unsubscribe();
