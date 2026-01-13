@@ -253,11 +253,8 @@ export function Sidebar({ onClose }: SidebarProps) {
       <div className="p-4 border-t border-border bg-background/50">
         <div className="mt-0">
              <Link 
-                href={spaceId ? `/space/${spaceId}/trash` : "#"}
-                className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer translation-colors",
-                    !spaceId && "opacity-50 pointer-events-none"
-                )}
+                href="/trash"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer translation-colors"
                 onClick={onClose}
              >
                 <Trash2 className="h-4 w-4" />
