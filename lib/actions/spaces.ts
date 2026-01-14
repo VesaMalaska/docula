@@ -34,18 +34,37 @@ export async function createSpace(name: string, isPublic: boolean, description: 
   }
 }
 
-export async function joinSpace(spaceId: string, userId: string) {
+export async function joinSpace(spaceId: string, userId: string): Promise<boolean> {
   const spaceRef = doc(db, "spaces", spaceId);
-  const spaceSnap = await getDoc(spaceRef);
 
-  if (spaceSnap.exists()) {
-    const data = spaceSnap.data();
-    if (data.isPublic && !data.userIds.includes(userId)) {
-      await updateDoc(spaceRef, {
-        userIds: [...data.userIds, userId]
-      });
+  try {
+    const spaceSnap = await getDoc(spaceRef);
+
+    if (spaceSnap.exists()) {
+      const data = spaceSnap.data();
+      // Check if already a member to avoid unnecessary writes
+      if (data.userIds && data.userIds.includes(userId)) {
+          console.log(`User ${userId} is already a member of space ${spaceId}`);
+          return true;
+      }
+
+      if (data.isPublic) {
+        await updateDoc(spaceRef, {
+          userIds: [...(data.userIds || []), userId]
+        });
+        console.log(`User ${userId} joined space ${spaceId}`);
+        return true;
+      } else {
+          console.warn(`User ${userId} attempted to join private space ${spaceId}`);
+      }
+    } else {
+        console.error(`Space ${spaceId} not found`);
     }
+  } catch (error) {
+    console.error(`Error joining space ${spaceId} for user ${userId}:`, error);
+    throw error;
   }
+  return false;
 }
 
 export async function leaveSpace(spaceId: string, userId: string) {
