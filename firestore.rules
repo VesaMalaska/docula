@@ -23,7 +23,12 @@ service cloud.firestore {
     match /spaces/{spaceId} {
       allow create: if isAuthenticated();
       allow read: if isSpaceMember(resource.data);
-      allow update, delete: if isAuthenticated() && (
+       allow update: if isAuthenticated() && (
+          (resource.data.isPublic == true) || // Allow anyone to update if public (specifically for joining)
+          request.auth.uid in resource.data.userIds || 
+          request.auth.uid == resource.data.ownerId
+      );
+      allow delete: if isAuthenticated() && (
           request.auth.uid in resource.data.userIds || 
           request.auth.uid == resource.data.ownerId
       );

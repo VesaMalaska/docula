@@ -43,8 +43,14 @@ function PublicSpaceList({ onClose }: { onClose: () => void }) {
         },
         onSuccess: (_, spaceId) => {
             queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
+            // Also invalidate the specific space queries to ensure UI updates immediately if we stay on same page (though we redirect)
+            queryClient.invalidateQueries({ queryKey: ["space", spaceId] });
             onClose();
             router.push(`/space/${spaceId}`);
+        },
+        onError: (error) => {
+            console.error("Failed to join space:", error);
+            // Optionally add a toast notification here
         }
     });
 
