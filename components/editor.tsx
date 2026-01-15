@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ResizableImage } from "./editor/resizable-image";
 import Link from "@tiptap/extension-link";
+import { LinkSuggestion } from "./editor/link-suggestion";
 import { useEffect, useState } from "react";
 import { Bold, Italic, List, ListOrdered, Code, Heading1, Heading2, Image as ImageIcon, Loader2, Link as LinkIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,12 +16,13 @@ interface EditorProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any;
   editable: boolean;
+  spaceId: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange?: (content: any) => void;
   onImageUpload?: (url: string) => void;
 }
 
-export function Editor({ content, editable, onChange, onImageUpload }: EditorProps) {
+export function Editor({ content, editable, spaceId, onChange, onImageUpload }: EditorProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [alertState, setAlertState] = useState<{ isOpen: boolean; title: string; message: string }>({
     isOpen: false,
@@ -42,7 +44,10 @@ export function Editor({ content, editable, onChange, onImageUpload }: EditorPro
         Link.configure({
             openOnClick: false,
             autolink: true,
-        })
+        }),
+        LinkSuggestion.configure({
+            spaceId: spaceId,
+        }),
     ],
     content: content,
     editable: editable,
