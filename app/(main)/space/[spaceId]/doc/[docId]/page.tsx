@@ -299,6 +299,7 @@ export default function DocPage() {
             editable={isEditing} 
             onChange={setContent}
             onImageUpload={(url) => setSessionImages(prev => [...prev, url])}
+            spaceId={spaceId}
         />
       </div>
       

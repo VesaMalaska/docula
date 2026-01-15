@@ -40,7 +40,8 @@ export async function createDocument(spaceId: string, parentId: string | null = 
     updatedAt: serverTimestamp(),
     lock: null,
     outboundLinks: [],
-    backlinks: []
+    backlinks: [],
+    deleted: false,
   };
 
   const docRef = await addDoc(collection(db, "documents"), newDoc);
@@ -129,6 +130,7 @@ export async function updateDocument(id: string, data: Partial<Document>) {
       const newOutboundLinks = extractLinks(data.content);
       
       await runTransaction(db, async (transaction) => {
+          // Phase 1: READ ALL
           const docSnap = await transaction.get(docRef);
           if (!docSnap.exists()) throw new Error("Doc not found");
           
@@ -138,14 +140,35 @@ export async function updateDocument(id: string, data: Partial<Document>) {
           const added = newOutboundLinks.filter(l => !oldOutboundLinks.includes(l));
           const removed = oldOutboundLinks.filter((l: string) => !newOutboundLinks.includes(l));
           
+          // Pre-fetch all targets to ensure we read everything before any write
+          const allTargetIds = [...new Set([...added, ...removed])];
+          const targetSnaps: Record<string, any> = {};
+          
+          for (const targetId of allTargetIds) {
+             const targetRef = doc(db, "documents", targetId);
+             // Note: if targetId is same as id, we already read it in docSnap?
+             // Not necessarily for the purpose of this map, but firestore handles redundant reads if they are same ref efficiently usually.
+             // However, to be safe and avoid read-start-after-write if logic gets complex:
+             if (targetId === id) {
+                 targetSnaps[targetId] = docSnap;
+             } else {
+                 targetSnaps[targetId] = await transaction.get(targetRef);
+             }
+          }
+
+          // Phase 2: WRITE ALL
+          
+          // Update main doc
           transaction.update(docRef, {
               ...updateData,
               outboundLinks: newOutboundLinks
           });
           
+          // Update added backlinks
           for (const targetId of added) {
               const targetRef = doc(db, "documents", targetId);
-              const targetSnap = await transaction.get(targetRef);
+              const targetSnap = targetSnaps[targetId];
+              
               if (targetSnap.exists()) {
                   const targetData = targetSnap.data();
                   const backlinks = targetData.backlinks || [];
@@ -157,9 +180,11 @@ export async function updateDocument(id: string, data: Partial<Document>) {
               }
           }
           
+          // Update removed backlinks
           for (const targetId of removed) {
               const targetRef = doc(db, "documents", targetId);
-              const targetSnap = await transaction.get(targetRef);
+              const targetSnap = targetSnaps[targetId]; // Use pre-fetched snapshot
+              
               if (targetSnap.exists()) {
                    const targetData = targetSnap.data();
                    const backlinks = targetData.backlinks || [];
@@ -300,4 +325,65 @@ export async function getSidebarTree(spaceId: string): Promise<SidebarNode[]> {
   });
 
   return tree;
+}
+
+export async function searchDocuments(queryText: string, spaceId: string): Promise<{ id: string; title: string }[]> {
+  try {
+    // Firestore does not support native text search.
+    // We will use a simple prefix match for now, or just client-side filtering if the set is small.
+    // For scalability, we should ideally use Algolia or similar, but for this app size:
+    
+    // Option 1: Fetch all titles in space and filter (simplest for < 1000 docs)
+    // Option 2: Prefix query (case sensitive usually)
+    
+    // Let's go with Option 1 for best UX (case-insensitive fuzzy-ish) without external deps
+    // We can reuse getSidebarTree logic but flatter
+    
+    const q = query(
+        collection(db, "documents"), 
+        where("spaceId", "==", spaceId),
+        // where("deleted", "==", false) -- removed because legacy docs might miss this field
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const results: { id: string; title: string }[] = [];
+    
+    const lowerQuery = queryText.toLowerCase();
+    
+    querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.deleted) return; 
+
+        const title = data.title || "Untitled";
+        if (title.toLowerCase().includes(lowerQuery)) {
+            results.push({
+                id: doc.id,
+                title: title
+            });
+        }
+    });
+    
+    // Sort by relevance (exact match first, then starts with, then includes)
+    results.sort((a, b) => {
+        const aTitle = a.title.toLowerCase();
+        const bTitle = b.title.toLowerCase();
+        
+        const aExact = aTitle === lowerQuery;
+        const bExact = bTitle === lowerQuery;
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+        
+        const aStarts = aTitle.startsWith(lowerQuery);
+        const bStarts = bTitle.startsWith(lowerQuery);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        
+        return a.title.localeCompare(b.title);
+    });
+
+    return results.slice(0, 10); // Limit to 10 suggestions
+  } catch (error) {
+    console.error("Error searching documents:", error);
+    return [];
+  }
 }
