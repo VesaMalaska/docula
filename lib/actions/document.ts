@@ -40,7 +40,6 @@ export async function createDocument(spaceId: string, parentId: string | null = 
     updatedAt: serverTimestamp(),
     lock: null,
     outboundLinks: [],
-    outboundLinks: [],
     backlinks: [],
     deleted: false,
   };
