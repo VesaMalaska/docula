@@ -137,15 +137,10 @@ export function Sidebar({ onClose }: SidebarProps) {
           if (!user) return;
           await deleteSpace(id, user.uid);
       },
-      onSuccess: (_, deletedSpaceId) => {
+      onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
           setSpaceToDelete(null);
-          toast({
-              title: "Space deleted",
-              description: "The space has been moved to the trashbin.",
-          });
-          // Check if the deleted space is the one we are currently viewing
-          if (spaceId && deletedSpaceId === spaceId) {
+          if (spaceId && spaceToDelete === spaceId) {
              router.push("/");
           }
       }
