@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 };
 
 import QueryProvider from "@/components/providers/query-provider";
+import { Toaster } from "@/components/ui/toaster";
 
 export default function RootLayout({
   children,
@@ -38,7 +39,10 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              {children}
+              <Toaster />
+            </AuthProvider>
           </ThemeProvider>
         </QueryProvider>
       </body>
