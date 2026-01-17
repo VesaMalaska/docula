@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/components/ui/use-toast";
 
 function PublicSpaceList({ onClose }: { onClose: () => void }) {
     const { user } = useAuth();
@@ -102,6 +103,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const params = useParams();
   const spaceId = params?.spaceId as string;
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Space Creation State
   const [isCreateSpaceOpen, setIsCreateSpaceOpen] = useState(false);
