@@ -92,10 +92,13 @@ export async function getSpacesForUser(userId: string): Promise<Space[]> {
     querySnapshot.forEach((doc) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const data = doc.data() as any; // Cast to any to handle timestamps
-        spaces.push({ 
-            id: doc.id, 
-            ...data 
-        } as Space);
+        // Filter out soft-deleted spaces (where deletedAt is set)
+        if (!data.deletedAt) {
+             spaces.push({ 
+                id: doc.id, 
+                ...data 
+            } as Space);
+        }
     });
     return spaces;
 }
@@ -111,10 +114,12 @@ export async function getPublicSpaces(): Promise<Space[]> {
     querySnapshot.forEach((doc) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const data = doc.data() as any; 
-        spaces.push({ 
-            id: doc.id, 
-            ...data 
-        } as Space);
+        if (!data.deletedAt) {
+            spaces.push({ 
+                id: doc.id, 
+                ...data 
+            } as Space);
+        }
     });
     return spaces;
 }
@@ -130,9 +135,48 @@ export async function getSpace(spaceId: string): Promise<Space | null> {
     return null;
 }
 
-export async function deleteSpace(spaceId: string) {
+export async function getDeletedSpacesForUser(userId: string): Promise<Space[]> {
+    // Only show spaces where the user is the owner
+    const q = query(
+        collection(db, "spaces"), 
+        where("ownerId", "==", userId),
+        where("deletedAt", "!=", null),
+        orderBy("deletedAt", "desc")
+    );
+    const querySnapshot = await getDocs(q);
+    const spaces: Space[] = [];
+    querySnapshot.forEach((doc) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = doc.data() as any;
+        spaces.push({ 
+            id: doc.id, 
+            ...data 
+        } as Space);
+    });
+    return spaces;
+}
+
+export async function deleteSpace(spaceId: string, userId: string) {
+    const spaceRef = doc(db, "spaces", spaceId);
+    await updateDoc(spaceRef, {
+        deletedAt: serverTimestamp(),
+        deletedBy: userId
+    });
+}
+
+export async function restoreSpace(spaceId: string) {
+    const spaceRef = doc(db, "spaces", spaceId);
+    await updateDoc(spaceRef, {
+        deletedAt: null,
+        deletedBy: null
+    });
+}
+
+export async function permanentlyDeleteSpace(spaceId: string) {
     await deleteDoc(doc(db, "spaces", spaceId));
     // NOTE: Ideally we should delete all documents in this space as well.
-    // implementing that requires a recursive deletion or a cloud function.
-    // For now, let's leave documents orphaned or delete them if possible.
+    // However, since documents are in a subcollection, deleting the parent doc
+    // does not delete the subcollections.
+    // For a production app, we should use a Cloud Function to handle recursive deletion
+    // or manually delete all sub-documents here.
 }

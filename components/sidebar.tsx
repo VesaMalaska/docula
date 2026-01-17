@@ -1,16 +1,23 @@
 "use client";
 
 
-import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace } from "@/lib/actions/spaces";
+import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace } from "@/lib/actions/spaces";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { AlertDialog } from "@/components/ui/alert-dialog";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
     Dialog,
     DialogContent,
@@ -100,6 +107,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [isCreateSpaceOpen, setIsCreateSpaceOpen] = useState(false);
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceIsPublic, setNewSpaceIsPublic] = useState(false);
+  const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -119,6 +127,20 @@ export function Sidebar({ onClose }: SidebarProps) {
           setNewSpaceName("");
           setNewSpaceIsPublic(false);
           if (newId) router.push(`/space/${newId}`);
+      }
+  });
+
+  const { mutate: deleteSpc, isPending: isDeletingSpace } = useMutation({
+      mutationFn: async (id: string) => {
+          if (!user) return;
+          await deleteSpace(id, user.uid);
+      },
+      onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
+          setSpaceToDelete(null);
+          if (spaceId && spaceToDelete === spaceId) {
+             router.push("/");
+          }
       }
   });
 
@@ -226,14 +248,38 @@ export function Sidebar({ onClose }: SidebarProps) {
                                 </Link>
                                 
                                 {isSpaceActive && (
-                                     <button
-                                        onClick={() => createDoc()}
-                                        disabled={isPending}
-                                        className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
-                                        title="New Document"
-                                    >
-                                        {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Plus className="h-3.5 w-3.5"/>}
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => createDoc()}
+                                            disabled={isPending}
+                                            className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
+                                            title="New Document"
+                                        >
+                                            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Plus className="h-3.5 w-3.5"/>}
+                                        </button>
+                                         <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <button 
+                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
+                                                    title="Space Settings"
+                                                >
+                                                    <MoreHorizontal className="h-3.5 w-3.5" />
+                                                </button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-40">
+                                                <DropdownMenuItem 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSpaceToDelete(space.id);
+                                                    }}
+                                                    className="text-destructive focus:text-destructive cursor-pointer"
+                                                >
+                                                    <Trash2 className="mr-2 h-4 w-4" />
+                                                    <span>Delete Space</span>
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
                                 )}
                              </div>
                              
@@ -268,6 +314,16 @@ export function Sidebar({ onClose }: SidebarProps) {
             </Link>
         </div>
       </div>
+      
+       <AlertDialog
+            isOpen={!!spaceToDelete}
+            onClose={() => setSpaceToDelete(null)}
+            title="Delete Space"
+            description="Are you sure you want to delete this space? You can restore it from the trashbin later."
+            onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
+            variant="destructive"
+            actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
+        />
     </aside>
   );
 }
