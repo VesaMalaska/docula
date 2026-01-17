@@ -41,4 +41,6 @@ export interface Space {
   userIds: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  deletedAt?: Timestamp | null;
+  deletedBy?: string | null;
 }

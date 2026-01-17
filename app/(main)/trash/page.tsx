@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getDeletedDocuments, restoreDocument, permanentlyDeleteDocument } from "@/lib/actions/document";
-import { getSpacesForUser } from "@/lib/actions/spaces";
+import { getSpacesForUser, getDeletedSpacesForUser, restoreSpace, permanentlyDeleteSpace } from "@/lib/actions/spaces";
 import { format } from "date-fns";
 import { Loader2, RefreshCw, Trash2, ArrowLeft, Archive } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -17,6 +17,12 @@ export default function TrashbinPage() {
     const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
         queryKey: ["user-spaces", user?.uid],
         queryFn: () => user ? getSpacesForUser(user.uid) : Promise.resolve([]),
+        enabled: !!user,
+    });
+
+    const { data: deletedSpaces, isLoading: isLoadingDeletedSpaces } = useQuery({
+        queryKey: ["deleted-spaces", user?.uid],
+        queryFn: () => user ? getDeletedSpacesForUser(user.uid) : Promise.resolve([]),
         enabled: !!user,
     });
 
@@ -36,16 +42,31 @@ export default function TrashbinPage() {
                     </div>
                 ) : (
                     <>
-                         {(!spaces || spaces.length === 0) && (
-                            <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
-                                <Archive className="h-12 w-12 mb-4 opacity-50" />
-                                <p>You are not a member of any spaces.</p>
+                        {deletedSpaces && deletedSpaces.length > 0 && (
+                            <div className="space-y-4">
+                                <h2 className="text-xl font-semibold px-1">Deleted Spaces</h2>
+                                {deletedSpaces.map(space => (
+                                    <DeletedSpaceItem key={space.id} space={space} />
+                                ))}
+                                <div className="h-px bg-border my-6" />
                             </div>
                         )}
 
-                        {spaces?.map(space => (
-                            <TrashSpaceSection key={space.id} space={space} />
-                        ))}
+                        {(!spaces || spaces.length === 0) && (!deletedSpaces || deletedSpaces.length === 0) && (
+                            <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
+                                <Archive className="h-12 w-12 mb-4 opacity-50" />
+                                <p>Trash is empty.</p>
+                            </div>
+                        )}
+
+                        {spaces && spaces.length > 0 && (
+                            <div className="space-y-4">
+                                <h2 className="text-xl font-semibold px-1">Deleted Documents</h2>
+                                {spaces.map(space => (
+                                    <TrashSpaceSection key={space.id} space={space} />
+                                ))}
+                            </div>
+                        )}
                     </>
                 )}
             </main>
@@ -152,6 +173,67 @@ function TrashSpaceSection({ space }: { space: Space }) {
                 title="Permanently Delete Document"
                 description="Are you sure you want to permanently delete this document? This action cannot be undone and will delete all attached images."
                 onAction={() => documentToDelete && removeForever(documentToDelete)}
+                variant="destructive"
+                actionLabel="Delete Forever"
+            />
+        </div>
+    );
+
+}
+
+function DeletedSpaceItem({ space }: { space: Space }) {
+    const queryClient = useQueryClient();
+    const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
+
+    const { mutate: restore, isPending: isRestoring } = useMutation({
+        mutationFn: restoreSpace,
+        onSuccess: () => {
+             queryClient.invalidateQueries({ queryKey: ["deleted-spaces"] });
+             queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
+        },
+    });
+
+    const { mutate: removeForever, isPending: isDeleting } = useMutation({
+        mutationFn: permanentlyDeleteSpace,
+        onSuccess: () => {
+             queryClient.invalidateQueries({ queryKey: ["deleted-spaces"] });
+             setSpaceToDelete(null);
+        },
+    });
+
+    return (
+        <div className="rounded-md border bg-card p-4 flex items-center justify-between">
+            <div className="flex flex-col">
+                <span className="font-medium text-lg">{space.name}</span>
+                <div className="text-sm text-muted-foreground flex gap-2">
+                    <span>Deleted {space.deletedAt ? format(space.deletedAt.toDate(), "MMM d, yyyy") : "-"}</span>
+                </div>
+            </div>
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => restore(space.id)}
+                    disabled={isRestoring || isDeleting}
+                    className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600 hover:text-green-700 transition-colors cursor-pointer"
+                    title="Restore Space"
+                >
+                    <RefreshCw className="h-4 w-4" />
+                </button>
+                <button 
+                    onClick={() => setSpaceToDelete(space.id)}
+                    disabled={isRestoring || isDeleting}
+                    className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-700 transition-colors cursor-pointer"
+                    title="Delete Forever"
+                >
+                    <Trash2 className="h-4 w-4" />
+                </button>
+            </div>
+
+             <AlertDialog
+                isOpen={!!spaceToDelete}
+                onClose={() => setSpaceToDelete(null)}
+                title="Permanently Delete Space"
+                description="Are you sure you want to permanently delete this space? This action cannot be undone and will delete all documents inside it."
+                onAction={() => spaceToDelete && removeForever(spaceToDelete)}
                 variant="destructive"
                 actionLabel="Delete Forever"
             />
