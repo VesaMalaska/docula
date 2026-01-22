@@ -54,7 +54,7 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: "prose prose-sm sm:prose-base lg:prose-lg xl:prose-2xl m-5 focus:outline-none max-w-none dark:prose-invert",
+        class: "prose prose-dynamic m-5 focus:outline-none max-w-none dark:prose-invert",
       },
     },
     onUpdate: ({ editor }) => {
@@ -175,6 +175,45 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
       editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
   };
 
+  // Font Size Logic
+  const [fontSize, setFontSize] = useState(16);
+
+  useEffect(() => {
+    // Ideally we get userId from context or props, but for now we might need to assume 
+    // we can get it from auth.currentUser or pass it down. 
+    // Since EditorProps doesn't have userId, let's try to get it from a hook if available,
+    // or we might have to rely on the parent or import { auth } from "@/lib/firebase";
+    // For specific user persistence we need auth.
+    import("@/lib/firebase").then(({ auth }) => {
+        const user = auth.currentUser;
+        if (user) {
+             import("@/lib/actions/user-settings").then(({ getUserSettings }) => {
+                getUserSettings(user.uid).then(settings => {
+                    if (settings.documentFontSize) {
+                        setFontSize(settings.documentFontSize);
+                    }
+                });
+             });
+        }
+    });
+  }, []);
+
+  const updateFontSize = (newSize: number) => {
+      setFontSize(newSize);
+      // Persist debounce or fire-and-forget
+      import("@/lib/firebase").then(({ auth }) => {
+          const user = auth.currentUser;
+          if (user) {
+            import("@/lib/actions/user-settings").then(({ updateDocumentFontSize }) => {
+                updateDocumentFontSize(user.uid, newSize);
+            });
+          }
+      });
+  };
+
+  const increaseFontSize = () => updateFontSize(Math.min(fontSize + 1, 32));
+  const decreaseFontSize = () => updateFontSize(Math.max(fontSize - 1, 12));
+
   if (!editor) {
     return null;
   }
@@ -182,7 +221,7 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
   return (
     <div className="w-full">
       {editable && (
-        <div className="sticky top-0 z-10 mb-4 flex gap-1 rounded-md border border-border bg-background p-1 shadow-sm flex-wrap">
+        <div className="sticky top-0 z-10 mb-4 flex gap-1 rounded-md border border-border bg-background p-1 shadow-sm flex-wrap items-center">
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleBold().run()}
             isActive={editor.isActive("bold")}
@@ -193,7 +232,7 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
             isActive={editor.isActive("italic")}
             icon={<Italic className="h-4 w-4" />}
           />
-          <div className="w-px bg-border mx-1" />
+          <div className="w-px h-6 bg-border mx-1" />
            <ToolbarBtn
             onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
             isActive={editor.isActive("heading", { level: 1 })}
@@ -204,7 +243,7 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
             isActive={editor.isActive("heading", { level: 2 })}
             icon={<Heading2 className="h-4 w-4" />}
           />
-          <div className="w-px bg-border mx-1" />
+          <div className="w-px h-6 bg-border mx-1" />
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             isActive={editor.isActive("bulletList")}
@@ -215,7 +254,7 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
             isActive={editor.isActive("orderedList")}
             icon={<ListOrdered className="h-4 w-4" />}
           />
-           <div className="w-px bg-border mx-1" />
+           <div className="w-px h-6 bg-border mx-1" />
           <ToolbarBtn
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
             isActive={editor.isActive("codeBlock")}
@@ -226,15 +265,38 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
             isActive={editor.isActive("link")}
             icon={<LinkIcon className="h-4 w-4" />}
           />
-           <div className="w-px bg-border mx-1" />
+           <div className="w-px h-6 bg-border mx-1" />
            <ToolbarBtn
             onClick={addImage}
             isActive={false}
             icon={isUploading ? <Loader2 className="h-4 w-4 animate-spin"/> : <ImageIcon className="h-4 w-4" />}
-          />
+           />
+           <div className="w-px h-6 bg-border mx-1" />
+           {/* Font Size Controls */}
+           <div className="flex items-center gap-1">
+             <button
+                onClick={decreaseFontSize}
+                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
+                title="Decrease Font Size"
+             >
+                A-
+             </button>
+             <span className="text-xs text-muted-foreground min-w-[2rem] text-center select-none">
+                {fontSize}px
+             </span>
+             <button
+                onClick={increaseFontSize}
+                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
+                title="Increase Font Size"
+             >
+                A+
+             </button>
+           </div>
         </div>
       )}
-      <EditorContent editor={editor} />
+      <div style={{ fontSize: `${fontSize}px` }} className="transition-all duration-200">
+        <EditorContent editor={editor} className="prose-dynamic" />
+      </div>
       <AlertDialog
         isOpen={alertState.isOpen}
         onClose={() => setAlertState((s) => ({ ...s, isOpen: false }))}

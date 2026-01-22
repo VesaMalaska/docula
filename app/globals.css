@@ -4,22 +4,28 @@
 @custom-variant dark (&:is(.dark *));
 @plugin "@tailwindcss/typography";
 
-:root { /* slate-950 */
+:root {
+  /* slate-950 */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.129 0.042 264.695);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755); /* slate-900 */
-  --primary-foreground: oklch(0.984 0.003 247.858); /* slate-50 */
-  --secondary: oklch(0.968 0.007 247.896); /* slate-100 */
+  --primary: oklch(0.208 0.042 265.755);
+  /* slate-900 */
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  /* slate-50 */
+  --secondary: oklch(0.968 0.007 247.896);
+  /* slate-100 */
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417); /* slate-500 */
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  /* slate-500 */
   --accent: oklch(0.968 0.007 247.896);
   --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: #f8fafc;
-  --border: oklch(0.929 0.013 255.508); /* slate-200 */
+  --border: oklch(0.929 0.013 255.508);
+  /* slate-200 */
   --input: oklch(0.929 0.013 255.508);
   --ring: oklch(0.704 0.04 256.788);
 
@@ -60,18 +66,22 @@
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695); /* slate-950 */
-  --foreground: oklch(0.984 0.003 247.858); /* slate-50 */
+  --background: oklch(0.129 0.042 264.695);
+  /* slate-950 */
+  --foreground: oklch(0.984 0.003 247.858);
+  /* slate-50 */
   --card: oklch(0.208 0.042 265.755);
   --card-foreground: oklch(0.984 0.003 247.858);
   --popover: oklch(0.208 0.042 265.755);
   --popover-foreground: oklch(0.984 0.003 247.858);
   --primary: oklch(0.929 0.013 255.508);
   --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031); /* slate-800 */
+  --secondary: oklch(0.279 0.041 260.031);
+  /* slate-800 */
   --secondary-foreground: oklch(0.984 0.003 247.858);
   --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788); /* slate-400 */
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  /* slate-400 */
   --accent: oklch(0.279 0.041 260.031);
   --accent-foreground: oklch(0.984 0.003 247.858);
   --destructive: oklch(0.704 0.191 22.216);
@@ -144,8 +154,72 @@ body {
 @layer base {
   * {
     @apply border-border outline-ring/50;
- }
+  }
+
   body {
     @apply bg-background text-foreground;
- }
+  }
+}
+
+@layer components {
+
+  /* 
+    Scale headings relative to the container's base font-size.
+    We use !important to override the specific pixel values set by @tailwindcss/typography.
+  */
+  .prose-dynamic {
+    font-size: inherit !important;
+    max-width: none !important;
+  }
+
+  .prose-dynamic h1 {
+    font-size: 2.5em !important;
+    line-height: 1.2 !important;
+    margin-top: 1.5em !important;
+    margin-bottom: 0.5em !important;
+  }
+
+  .prose-dynamic h2 {
+    font-size: 2em !important;
+    line-height: 1.3 !important;
+    margin-top: 1.5em !important;
+    margin-bottom: 0.5em !important;
+  }
+
+  .prose-dynamic h3 {
+    font-size: 1.5em !important;
+    line-height: 1.4 !important;
+    margin-top: 1.5em !important;
+    margin-bottom: 0.5em !important;
+  }
+
+  .prose-dynamic h4 {
+    font-size: 1.25em !important;
+    line-height: 1.5 !important;
+    margin-top: 1.2em !important;
+    margin-bottom: 0.5em !important;
+  }
+
+  .prose-dynamic h5 {
+    font-size: 1.125em !important;
+    line-height: 1.5 !important;
+    margin-top: 1.2em !important;
+    margin-bottom: 0.5em !important;
+  }
+
+  .prose-dynamic h6 {
+    font-size: 1em !important;
+    line-height: 1.5 !important;
+    margin-top: 1.2em !important;
+    margin-bottom: 0.5em !important;
+  }
+
+  /* Ensure body text inherits the container font size */
+  .prose-dynamic p,
+  .prose-dynamic li,
+  .prose-dynamic ul,
+  .prose-dynamic ol {
+    font-size: 1em !important;
+    line-height: 1.6 !important;
+  }
 }
