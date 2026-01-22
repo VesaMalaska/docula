@@ -172,11 +172,24 @@ export async function restoreSpace(spaceId: string) {
     });
 }
 
+import { getDeletedDocuments, permanentlyDeleteDocument } from "./document";
+
 export async function permanentlyDeleteSpace(spaceId: string) {
+    // 1. Permanently delete all documents in the space
+    // We can re-use getDeletedDocuments API-wise, but we actually want ALL documents (even not deleted ones?)
+    // Actually, if space is deleted, documents might still be there.
+    // Let's use getDocs directly here to be safe and thorough.
+    
+    // NOTE: Ideally this should be a backend function / recursive delete.
+    // Doing it client side has risk of timeout for large spaces.
+    
+    const q = query(collection(db, "documents"), where("spaceId", "==", spaceId));
+    const querySnapshot = await getDocs(q);
+    
+    // Delete documents one by one (to handle image deletion logic in permanentlyDeleteDocument)
+    const deletePromises = querySnapshot.docs.map(doc => permanentlyDeleteDocument(doc.id));
+    await Promise.all(deletePromises);
+
+    // 2. Delete the space itself
     await deleteDoc(doc(db, "spaces", spaceId));
-    // NOTE: Ideally we should delete all documents in this space as well.
-    // However, since documents are in a subcollection, deleting the parent doc
-    // does not delete the subcollections.
-    // For a production app, we should use a Cloud Function to handle recursive deletion
-    // or manually delete all sub-documents here.
 }
