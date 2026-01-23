@@ -43,7 +43,7 @@ export default function MainLayout({
       />
 
       <div className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 transform transition-transform lg:static lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-64 xl:w-[296px] 2xl:w-96 transform transition-transform lg:static lg:translate-x-0",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <Sidebar onClose={() => setIsSidebarOpen(false)} />

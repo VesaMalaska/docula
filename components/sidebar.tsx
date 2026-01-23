@@ -162,7 +162,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   });
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-border bg-muted transition-colors duration-300">
+    <aside className="flex h-full w-full flex-col border-r border-border bg-muted transition-colors duration-300">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <h1 className="text-xl font-bold text-foreground">Docula</h1>
         <div className="flex items-center gap-1">
