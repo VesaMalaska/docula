@@ -139,7 +139,7 @@ function TreeNode({
         
         <Link href={`/space/${spaceId}/doc/${node.id}`} className="flex-1 truncate block mr-2 cursor-pointer">
             <div className="flex items-center gap-2">
-                <FileText className={cn("h-3.5 w-3.5", isActive ? "text-foreground" : "text-muted-foreground")} />
+                <FileText className={cn("h-3.5 w-3.5 shrink-0", isActive ? "text-foreground" : "text-muted-foreground")} />
                 <span className="truncate">{node.title}</span>
             </div>
         </Link>
