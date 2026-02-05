@@ -15,6 +15,16 @@ import { SidebarNode } from "@/lib/types";
 import { extractImageUrls, replaceImageUrls, stripImageParams } from "@/lib/utils";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Download } from "lucide-react";
+import { jsonToMarkdown } from "@/lib/markdown-converter";
+import { jsonToDocx } from "@/lib/docx-converter";
+
 
 function BacklinksList({ docIds, spaceId }: { docIds: string[], spaceId: string }) {
     const { data: tree } = useQuery({ 
@@ -156,6 +166,41 @@ export default function DocPage() {
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
   };
 
+  const handleExport = async (format: 'markdown' | 'docx' | 'pdf') => {
+      if (!doc || !doc.content) return;
+
+      let blob: Blob | null = null;
+      let extension = "";
+
+      try {
+          if (format === 'markdown') {
+              const contentStr = jsonToMarkdown(doc.content);
+              blob = new Blob([contentStr], { type: "text/markdown" });
+              extension = "md";
+          } else if (format === 'docx') {
+              blob = await jsonToDocx(doc.content);
+              extension = "docx";
+          }
+
+          if (!blob) {
+              console.error("No blob generated");
+              return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${doc.title || "document"}.${extension}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+      } catch (e) {
+          console.error("Export failed", e);
+          alert("Export failed. Please check console.");
+      }
+  };
+
   const { mutate: save, isPending: isSaving } = useMutation({
     mutationFn: async () => {
       // 1. Clean content from signed URLs (strip params) to get clean/permanent keys
@@ -280,14 +325,33 @@ export default function DocPage() {
                 </button>
              </>
           ) : (
-             <button
-                onClick={handleEdit}
-                disabled={!!isLockedByOther}
-                className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-             >
-                <Edit2 className="h-4 w-4" />
-                {isLockedByOther ? "Locked" : "Edit"}
-             </button>
+             <div className="flex gap-2">
+                 <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
+                            <Download className="h-4 w-4" />
+                            Export
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleExport('markdown')} className="cursor-pointer">
+                            Markdown (.md)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport('docx')} className="cursor-pointer">
+                            Word Document (.docx)
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                 </DropdownMenu>
+
+                 <button
+                    onClick={handleEdit}
+                    disabled={!!isLockedByOther}
+                    className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                 >
+                    <Edit2 className="h-4 w-4" />
+                    {isLockedByOther ? "Locked" : "Edit"}
+                 </button>
+             </div>
           )}
         </div>
       </div>
