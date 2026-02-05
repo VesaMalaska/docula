@@ -100,9 +100,22 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
                      const response = await fetch(proxyUrl);
                      if (!response.ok) throw new Error(`Failed to fetch image via proxy: ${response.status}`);
                      
-                     const blob = await response.blob();
+                    const blob = await response.blob();
                      const buffer = await blob.arrayBuffer();
                      
+                     // Determine image type from blob
+                     const extension = blob.type.split('/')[1];
+                     // Map to docx supported types: "jpg" | "png" | "gif" | "bmp"
+                     let type: "jpg" | "png" | "gif" | "bmp" = "png"; // default fallback
+                     
+                     if (extension === 'jpeg' || extension === 'jpg') type = "jpg";
+                     else if (extension === 'gif') type = "gif";
+                     else if (extension === 'bmp') type = "bmp";
+                     else if (extension === 'png') type = "png";
+                     // For svg or others, we might want to fallback to png if possible or skip, 
+                     // but docx needs one of specific types. 
+                     // Assuming the proxy returns something standard.
+
                      paragraphs.push(new Paragraph({
                          children: [
                              new ImageRun({
@@ -110,7 +123,8 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
                                  transformation: {
                                      width: 400, // default limit
                                      height: 300,
-                                 }
+                                 },
+                                 type: type,
                              })
                          ]
                      }));
@@ -242,7 +256,7 @@ async function processInlineContent(node: TiptapNode): Promise<(TextRun | Extern
     return runs;
 }
 
-function getHeadingLevel(level?: number): HeadingLevel {
+function getHeadingLevel(level?: number): (typeof HeadingLevel)[keyof typeof HeadingLevel] {
     switch (level) {
         case 1: return HeadingLevel.HEADING_1;
         case 2: return HeadingLevel.HEADING_2;
