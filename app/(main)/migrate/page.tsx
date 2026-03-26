@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, doc, setDoc, updateDoc, deleteField } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, updateDoc, deleteField, query, where } from "firebase/firestore";
 import { useAuth } from "@/components/providers/auth-provider";
+import { getSpacesForUser, getPublicSpaces } from "@/lib/actions/spaces";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
@@ -17,24 +18,36 @@ export default function MigratePage() {
     setLoading(true);
     setResult(null);
     try {
-      const docsSnap = await getDocs(collection(db, "documents"));
+      const userSpaces = await getSpacesForUser(user.uid);
+      // Wait, public spaces might be enormous, but let's just get the ones we need
+      const publicSpaces = await getPublicSpaces();
+      const allSpaces = [...userSpaces, ...publicSpaces];
+      
+      // Deduplicate
+      const spaceIds = Array.from(new Set(allSpaces.map(s => s.id)));
+
       let migratedCount = 0;
       let skippedCount = 0;
-      
-      for (const document of docsSnap.docs) {
-        const data = document.data();
-        if (data.content !== undefined) {
-          // 1. Write to subcollection
-          const contentRef = doc(db, "documents", document.id, "content", "main");
-          await setDoc(contentRef, { content: data.content });
-          
-          // 2. Remove from main document
-          const docRef = doc(db, "documents", document.id);
-          await updateDoc(docRef, { content: deleteField() });
-          
-          migratedCount++;
-        } else {
-          skippedCount++;
+
+      for (const spaceId of spaceIds) {
+        const q = query(collection(db, "documents"), where("spaceId", "==", spaceId));
+        const docsSnap = await getDocs(q);
+        
+        for (const document of docsSnap.docs) {
+          const data = document.data();
+          if (data.content !== undefined) {
+            // 1. Write to subcollection
+            const contentRef = doc(db, "documents", document.id, "content", "main");
+            await setDoc(contentRef, { content: data.content });
+            
+            // 2. Remove from main document
+            const docRef = doc(db, "documents", document.id);
+            await updateDoc(docRef, { content: deleteField() });
+            
+            migratedCount++;
+          } else {
+            skippedCount++;
+          }
         }
       }
 
