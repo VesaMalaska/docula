@@ -5,6 +5,7 @@ import {
   getDoc, 
   getDocs, 
   addDoc, 
+  setDoc,
   updateDoc,
   runTransaction,
   serverTimestamp, 
@@ -32,7 +33,6 @@ export async function createDocument(spaceId: string, parentId: string | null = 
   const newDoc = {
     spaceId,
     title: "Untitled",
-    content: null, 
     parentId,
     path, 
     tags: [],
@@ -45,6 +45,8 @@ export async function createDocument(spaceId: string, parentId: string | null = 
   };
 
   const docRef = await addDoc(collection(db, "documents"), newDoc);
+  const contentRef = doc(db, "documents", docRef.id, "content", "main");
+  await setDoc(contentRef, { content: null });
   return docRef.id;
 }
 
@@ -58,6 +60,18 @@ export async function getDocument(id: string): Promise<Document | null> {
         id: docSnap.id, 
         ...data 
     } as Document;
+
+    // Fetch content from subcollection
+    const contentRef = doc(db, "documents", id, "content", "main");
+    const contentSnap = await getDoc(contentRef);
+    if (contentSnap.exists()) {
+        docData.content = contentSnap.data().content;
+    } else if (data.content !== undefined) {
+        // Fallback to legacy field until migrated
+        docData.content = data.content;
+    } else {
+        docData.content = null;
+    }
 
     // Sign images for private bucket access
     if (docData.content) {
@@ -123,11 +137,12 @@ function extractLinks(content: any): string[] {
 export async function updateDocument(id: string, data: Partial<Document>) {
   const docRef = doc(db, "documents", id);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-  const { id: _, ...updateData } = data as any;
+  const { id: _, content: contentField, ...updateData } = data as any;
   updateData.updatedAt = serverTimestamp();
 
-  if (data.content) {
-      const newOutboundLinks = extractLinks(data.content);
+  if (contentField !== undefined) {
+      const newOutboundLinks = extractLinks(contentField);
+      const contentRef = doc(db, "documents", id, "content", "main");
       
       await runTransaction(db, async (transaction) => {
           // Phase 1: READ ALL
@@ -163,6 +178,9 @@ export async function updateDocument(id: string, data: Partial<Document>) {
               ...updateData,
               outboundLinks: newOutboundLinks
           });
+
+          // Write to subcollection
+          transaction.set(contentRef, { content: contentField });
           
           // Update added backlinks
           for (const targetId of added) {
