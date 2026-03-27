@@ -40,6 +40,10 @@ service cloud.firestore {
       
       // Allow read/write if user has access to the *existing* document's space
       allow read, update, delete: if isAuthenticated() && canAccessSpace(resource.data.spaceId);
+      
+      match /content/{contentId} {
+         allow read, write: if isAuthenticated() && canAccessSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId);
+      }
     }
 
     match /users/{userId} {
