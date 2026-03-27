@@ -5,7 +5,7 @@ import { getDocument, updateDocument, getSidebarTree } from "@/lib/actions/docum
 import { acquireLock, releaseLock } from "@/lib/actions/locking";
 import { permanentizeImages, deleteImages } from "@/lib/actions/s3";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Editor } from "@/components/editor";
 import { useState, useEffect, useRef } from "react";
 import { Loader2, Save, Edit2, AlertCircle } from "lucide-react";
@@ -85,6 +85,8 @@ function DocSkeleton() {
 
 export default function DocPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const spaceId = params.spaceId as string;
   const id = params.docId as string;
   const { user } = useAuth();
@@ -148,6 +150,17 @@ export default function DocPage() {
         alert("Could not acquire lock. Document is being edited by someone else.");
     }
   };
+
+  useEffect(() => {
+    if (searchParams?.get("edit") === "true" && user && doc && !isEditingRef.current) {
+        const autoEditKey = `auto-edit-${id}`;
+        if (!sessionStorage.getItem(autoEditKey)) {
+            sessionStorage.setItem(autoEditKey, "true");
+            router.replace(`/space/${spaceId}/doc/${id}`);
+            handleEdit();
+        }
+    }
+  }, [searchParams, user, doc, id, spaceId, router]);
 
   const handleCancel = async () => {
       setIsEditing(false);

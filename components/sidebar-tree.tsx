@@ -91,7 +91,7 @@ function TreeNode({
     onSuccess: (newId) => {
       if (!isOpen) toggleNode(node.id);
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
-      router.push(`/space/${spaceId}/doc/${newId}`);
+      router.push(`/space/${spaceId}/doc/${newId}?edit=true`);
     },
   });
 
