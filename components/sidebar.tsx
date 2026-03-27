@@ -156,7 +156,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     mutationFn: () => createDocument(spaceId, null),
     onSuccess: (newDocId) => {
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
-      router.push(`/space/${spaceId}/doc/${newDocId}`);
+      router.push(`/space/${spaceId}/doc/${newDocId}?edit=true`);
       onClose?.();
     },
   });
