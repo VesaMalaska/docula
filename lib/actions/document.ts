@@ -66,9 +66,6 @@ export async function getDocument(id: string): Promise<Document | null> {
     const contentSnap = await getDoc(contentRef);
     if (contentSnap.exists()) {
         docData.content = contentSnap.data().content;
-    } else if (data.content !== undefined) {
-        // Fallback to legacy field until migrated
-        docData.content = data.content;
     } else {
         docData.content = null;
     }
