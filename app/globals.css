@@ -227,4 +227,44 @@ body {
     margin-top: 0 !important;
     margin-bottom: 0 !important;
   }
+
+  /* Tiptap Table CSS */
+  .prose-dynamic table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+  .prose-dynamic table td,
+  .prose-dynamic table th {
+    min-width: 1em;
+    border: 1px solid var(--border);
+    padding: 3px 5px;
+    vertical-align: top;
+    box-sizing: border-box;
+    position: relative;
+  }
+  .prose-dynamic table th {
+    font-weight: bold;
+    text-align: left;
+    background-color: var(--muted);
+  }
+  .prose-dynamic table .selectedCell:after {
+    z-index: 2;
+    position: absolute;
+    content: "";
+    left: 0; right: 0; top: 0; bottom: 0;
+    background: rgba(200, 200, 255, 0.4);
+    pointer-events: none;
+  }
+  .prose-dynamic table .column-resize-handle {
+    position: absolute;
+    right: -1px;
+    top: 0;
+    bottom: -1px;
+    width: 3px;
+    background-color: var(--primary);
+    pointer-events: none;
+  }
 }
