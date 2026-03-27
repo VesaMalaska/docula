@@ -5,8 +5,14 @@ import StarterKit from "@tiptap/starter-kit";
 import { ResizableImage } from "./editor/resizable-image";
 import Link from "@tiptap/extension-link";
 import { LinkSuggestion } from "./editor/link-suggestion";
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableMarkdownInputRule } from './editor/table-markdown-input-rule';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./ui/dropdown-menu";
 import { useEffect, useState } from "react";
-import { Bold, Italic, List, ListOrdered, Code, Heading1, Heading2, Image as ImageIcon, Loader2, Link as LinkIcon } from "lucide-react";
+import { Bold, Italic, List, ListOrdered, Code, Heading1, Heading2, Image as ImageIcon, Loader2, Link as LinkIcon, Table as TableIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
 import { optimizeImage } from "@/lib/image-optimization";
@@ -48,6 +54,13 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
         LinkSuggestion.configure({
             spaceId: spaceId,
         }),
+        Table.configure({
+            resizable: true,
+        }),
+        TableRow,
+        TableHeader,
+        TableCell,
+        TableMarkdownInputRule,
     ],
     content: content,
     editable: editable,
@@ -265,6 +278,37 @@ export function Editor({ content, editable, spaceId, onChange, onImageUpload }: 
             isActive={editor.isActive("link")}
             icon={<LinkIcon className="h-4 w-4" />}
           />
+           <div className="w-px h-6 bg-border mx-1" />
+           <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <button
+                    className={cn(
+                    "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
+                    editor.isActive("table") && "bg-accent text-accent-foreground"
+                    )}
+                >
+                    <TableIcon className="h-4 w-4" />
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {!editor.isActive("table") && (
+                  <DropdownMenuItem onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
+                    Insert Table
+                  </DropdownMenuItem>
+              )}
+              {editor.isActive("table") && (
+                  <>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}>Add Column Before</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}>Add Column After</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().deleteColumn().run()}>Delete Column</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}>Add Row Before</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().addRowAfter().run()}>Add Row After</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().deleteRow().run()}>Delete Row</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => editor.chain().focus().deleteTable().run()} className="text-destructive focus:text-destructive">Delete Table</DropdownMenuItem>
+                  </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
            <div className="w-px h-6 bg-border mx-1" />
            <ToolbarBtn
             onClick={addImage}
