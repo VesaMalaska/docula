@@ -24,7 +24,7 @@ export default function MainLayout({
   }, [user, loading, router]);
 
   if (loading || !user) {
-     return (
+    return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
@@ -34,25 +34,29 @@ export default function MainLayout({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* Mobile Sidebar Overlay */}
-      <div 
+      <div
         className={cn(
-            "fixed inset-0 z-40 bg-black/50 transition-opacity lg:hidden",
-            isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          "fixed inset-0 z-40 bg-black/50 transition-opacity lg:hidden",
+          isSidebarOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none",
         )}
         onClick={() => setIsSidebarOpen(false)}
       />
 
-      <div className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 xl:w-[296px] 2xl:w-96 transform transition-transform lg:static lg:translate-x-0",
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
+      <div
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 xl:w-[296px] 2xl:w-96 transform transition-transform lg:static lg:translate-x-0",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
         <Sidebar onClose={() => setIsSidebarOpen(false)} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
-            {children}
+        <main className="flex-1 overflow-y-auto pb-4 md:pb-8">
+          {children}
         </main>
       </div>
     </div>
