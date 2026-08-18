@@ -84,7 +84,7 @@ function BacklinksList({
 
 function DocSkeleton() {
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-4xl px-4 md:px-8 pt-4 md:pt-8">
       <div className="flex items-center gap-2 mb-4">
         <Skeleton className="h-4 w-4" />
         <Skeleton className="h-4 w-16" />
@@ -344,129 +344,133 @@ export default function DocPage() {
     doc.lock.userId !== user?.uid;
 
   return (
-    <div className="mx-auto max-w-4xl relative">
+    <div className="relative w-full">
       <div
         ref={sentinelRef}
         className="absolute top-0 w-full h-1 pointer-events-none"
       />
-      <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
+      <div className="mx-auto max-w-4xl px-4 md:px-8">
+        <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
 
-      {isLockedByOther && (
-        <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
-          <div className="flex">
-            <div className="shrink-0">
-              <AlertCircle
-                className="h-5 w-5 text-amber-400 dark:text-amber-500"
-                aria-hidden="true"
-              />
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                Document is locked
-              </h3>
-              <div className="mt-2 text-sm text-amber-700 dark:text-amber-300">
-                <p>
-                  This document is currently being edited by{" "}
-                  {doc.lock?.userName}. You can only view it until they release
-                  the lock (expires{" "}
-                  {doc.lock?.expiresAt.toDate().toLocaleTimeString()}).
-                </p>
+        {isLockedByOther && (
+          <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
+            <div className="flex">
+              <div className="shrink-0">
+                <AlertCircle
+                  className="h-5 w-5 text-amber-400 dark:text-amber-500"
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Document is locked
+                </h3>
+                <div className="mt-2 text-sm text-amber-700 dark:text-amber-300">
+                  <p>
+                    This document is currently being edited by{" "}
+                    {doc.lock?.userName}. You can only view it until they release
+                    the lock (expires{" "}
+                    {doc.lock?.expiresAt.toDate().toLocaleTimeString()}).
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div
         className={cn(
-          "flex items-center justify-between py-3 -mx-4 px-4 md:-mx-8 md:px-8 bg-gray-50 dark:bg-gray-900 border-b dark:border-zinc-800 transition-all duration-200 z-20",
+          "w-full bg-gray-50 dark:bg-gray-900 border-b dark:border-zinc-800 transition-all duration-200 z-20",
           isScrolled ? "sticky top-0 shadow-sm" : "relative",
         )}
       >
-        {isEditing ? (
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+        <div className="mx-auto max-w-4xl px-4 md:px-8 flex items-center justify-between py-3">
+          {isEditing ? (
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className={cn(
+                "font-bold text-gray-900 dark:text-zinc-100 bg-transparent focus:outline-none w-full mr-4 placeholder-gray-400 dark:placeholder-zinc-600 transition-all duration-200",
+                isScrolled ? "text-xl" : "text-3xl",
+              )}
+              placeholder="Untitled"
+            />
+          ) : (
+            <h1
+              className={cn(
+                "font-bold text-gray-900 dark:text-zinc-100 transition-all duration-200 transform origin-left",
+                isScrolled ? "text-xl" : "text-3xl",
+              )}
+            >
+              {doc.title}
+            </h1>
+          )}
+
+          <div
             className={cn(
-              "font-bold text-gray-900 dark:text-zinc-100 bg-transparent focus:outline-none w-full mr-4 placeholder-gray-400 dark:placeholder-zinc-600 transition-all duration-200",
-              isScrolled ? "text-xl" : "text-3xl",
-            )}
-            placeholder="Untitled"
-          />
-        ) : (
-          <h1
-            className={cn(
-              "font-bold text-gray-900 dark:text-zinc-100 transition-all duration-200 transform origin-left",
-              isScrolled ? "text-xl" : "text-3xl",
+              "flex gap-2 transition-transform duration-200 origin-right",
+              isScrolled && "scale-90",
             )}
           >
-            {doc.title}
-          </h1>
-        )}
+            {isEditing ? (
+              <>
+                <button
+                  onClick={handleCancel}
+                  className="px-3 py-1 text-sm text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => save()}
+                  disabled={isSaving}
+                  className="flex items-center gap-1 rounded bg-indigo-600 dark:bg-indigo-500 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Save
+                </button>
+              </>
+            ) : (
+              <div className="flex gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
+                      <Download className="h-4 w-4" />
+                      Export
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => handleExport("markdown")}
+                      className="cursor-pointer"
+                    >
+                      Markdown (.md)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleExport("docx")}
+                      className="cursor-pointer"
+                    >
+                      Word Document (.docx)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-        <div
-          className={cn(
-            "flex gap-2 transition-transform duration-200 origin-right",
-            isScrolled && "scale-90",
-          )}
-        >
-          {isEditing ? (
-            <>
-              <button
-                onClick={handleCancel}
-                className="px-3 py-1 text-sm text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => save()}
-                disabled={isSaving}
-                className="flex items-center gap-1 rounded bg-indigo-600 dark:bg-indigo-500 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors cursor-pointer"
-              >
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                Save
-              </button>
-            </>
-          ) : (
-            <div className="flex gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
-                    <Download className="h-4 w-4" />
-                    Export
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={() => handleExport("markdown")}
-                    className="cursor-pointer"
-                  >
-                    Markdown (.md)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleExport("docx")}
-                    className="cursor-pointer"
-                  >
-                    Word Document (.docx)
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <button
-                onClick={handleEdit}
-                disabled={!!isLockedByOther}
-                className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              >
-                <Edit2 className="h-4 w-4" />
-                {isLockedByOther ? "Locked" : "Edit"}
-              </button>
-            </div>
-          )}
+                <button
+                  onClick={handleEdit}
+                  disabled={!!isLockedByOther}
+                  className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  <Edit2 className="h-4 w-4" />
+                  {isLockedByOther ? "Locked" : "Edit"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -482,22 +486,24 @@ export default function DocPage() {
         />
       </div>
 
-      <div className="mt-10 border-t dark:border-zinc-800 pt-4 text-sm text-gray-400 dark:text-zinc-500">
-        <p>
-          Last updated:{" "}
-          {doc.updatedAt?.toDate
-            ? doc.updatedAt.toDate().toLocaleString()
-            : "Just now"}
-        </p>
-        <div className="mt-2">
-          <span className="font-semibold text-gray-900 dark:text-zinc-200">
-            Linked to by:
-          </span>
-          {doc.backlinks?.length > 0 ? (
-            <BacklinksList docIds={doc.backlinks} spaceId={spaceId} />
-          ) : (
-            " None"
-          )}
+      <div className="mx-auto max-w-4xl px-4 md:px-8">
+        <div className="mt-10 border-t dark:border-zinc-800 pt-4 text-sm text-gray-400 dark:text-zinc-500">
+          <p>
+            Last updated:{" "}
+            {doc.updatedAt?.toDate
+              ? doc.updatedAt.toDate().toLocaleString()
+              : "Just now"}
+          </p>
+          <div className="mt-2">
+            <span className="font-semibold text-gray-900 dark:text-zinc-200">
+              Linked to by:
+            </span>
+            {doc.backlinks?.length > 0 ? (
+              <BacklinksList docIds={doc.backlinks} spaceId={spaceId} />
+            ) : (
+              " None"
+            )}
+          </div>
         </div>
       </div>
     </div>

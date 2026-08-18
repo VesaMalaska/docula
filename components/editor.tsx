@@ -290,170 +290,174 @@ export function Editor({
       {editable && (
         <div
           className={cn(
-            "sticky z-10 mb-4 flex gap-1 bg-gray-50 dark:bg-gray-900 flex-wrap items-center border-b border-border dark:border-zinc-800 rounded-none -mx-4 px-4 md:-mx-8 md:px-8 py-2 shadow-sm transition-all duration-200",
+            "sticky z-10 mb-4 w-full bg-gray-50 dark:bg-gray-900 border-b border-border dark:border-zinc-800 shadow-sm transition-all duration-200",
             isScrolled ? "top-[52px]" : "top-0",
           )}
         >
-          <ToolbarBtn
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            isActive={editor.isActive("bold")}
-            icon={<Bold className="h-4 w-4" />}
-          />
-          <ToolbarBtn
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            isActive={editor.isActive("italic")}
-            icon={<Italic className="h-4 w-4" />}
-          />
-          <div className="w-px h-6 bg-border mx-1" />
-          <ToolbarBtn
-            onClick={() =>
-              editor.chain().focus().toggleHeading({ level: 1 }).run()
-            }
-            isActive={editor.isActive("heading", { level: 1 })}
-            icon={<Heading1 className="h-4 w-4" />}
-          />
-          <ToolbarBtn
-            onClick={() =>
-              editor.chain().focus().toggleHeading({ level: 2 }).run()
-            }
-            isActive={editor.isActive("heading", { level: 2 })}
-            icon={<Heading2 className="h-4 w-4" />}
-          />
-          <div className="w-px h-6 bg-border mx-1" />
-          <ToolbarBtn
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            isActive={editor.isActive("bulletList")}
-            icon={<List className="h-4 w-4" />}
-          />
-          <ToolbarBtn
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            isActive={editor.isActive("orderedList")}
-            icon={<ListOrdered className="h-4 w-4" />}
-          />
-          <div className="w-px h-6 bg-border mx-1" />
-          <ToolbarBtn
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            isActive={editor.isActive("codeBlock")}
-            icon={<Code className="h-4 w-4" />}
-          />
-          <ToolbarBtn
-            onClick={addLink}
-            isActive={editor.isActive("link")}
-            icon={<LinkIcon className="h-4 w-4" />}
-          />
-          <div className="w-px h-6 bg-border mx-1" />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className={cn(
-                  "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
-                  editor.isActive("table") &&
-                    "bg-accent text-accent-foreground",
-                )}
-              >
-                <TableIcon className="h-4 w-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {!editor.isActive("table") && (
-                <DropdownMenuItem
-                  onClick={() =>
-                    editor
-                      .chain()
-                      .focus()
-                      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-                      .run()
-                  }
+          <div className="mx-auto max-w-4xl px-4 md:px-8 py-2 flex gap-1 flex-wrap items-center">
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              isActive={editor.isActive("bold")}
+              icon={<Bold className="h-4 w-4" />}
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              isActive={editor.isActive("italic")}
+              icon={<Italic className="h-4 w-4" />}
+            />
+            <div className="w-px h-6 bg-border mx-1" />
+            <ToolbarBtn
+              onClick={() =>
+                editor.chain().focus().toggleHeading({ level: 1 }).run()
+              }
+              isActive={editor.isActive("heading", { level: 1 })}
+              icon={<Heading1 className="h-4 w-4" />}
+            />
+            <ToolbarBtn
+              onClick={() =>
+                editor.chain().focus().toggleHeading({ level: 2 }).run()
+              }
+              isActive={editor.isActive("heading", { level: 2 })}
+              icon={<Heading2 className="h-4 w-4" />}
+            />
+            <div className="w-px h-6 bg-border mx-1" />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleBulletList().run()}
+              isActive={editor.isActive("bulletList")}
+              icon={<List className="h-4 w-4" />}
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleOrderedList().run()}
+              isActive={editor.isActive("orderedList")}
+              icon={<ListOrdered className="h-4 w-4" />}
+            />
+            <div className="w-px h-6 bg-border mx-1" />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+              isActive={editor.isActive("codeBlock")}
+              icon={<Code className="h-4 w-4" />}
+            />
+            <ToolbarBtn
+              onClick={addLink}
+              isActive={editor.isActive("link")}
+              icon={<LinkIcon className="h-4 w-4" />}
+            />
+            <div className="w-px h-6 bg-border mx-1" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
+                    editor.isActive("table") &&
+                      "bg-accent text-accent-foreground",
+                  )}
                 >
-                  Insert Table
-                </DropdownMenuItem>
-              )}
-              {editor.isActive("table") && (
-                <>
+                  <TableIcon className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {!editor.isActive("table") && (
                   <DropdownMenuItem
                     onClick={() =>
-                      editor.chain().focus().addColumnBefore().run()
+                      editor
+                        .chain()
+                        .focus()
+                        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                        .run()
                     }
                   >
-                    Add Column Before
+                    Insert Table
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() =>
-                      editor.chain().focus().addColumnAfter().run()
-                    }
-                  >
-                    Add Column After
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => editor.chain().focus().deleteColumn().run()}
-                  >
-                    Delete Column
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => editor.chain().focus().addRowBefore().run()}
-                  >
-                    Add Row Before
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => editor.chain().focus().addRowAfter().run()}
-                  >
-                    Add Row After
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => editor.chain().focus().deleteRow().run()}
-                  >
-                    Delete Row
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => editor.chain().focus().deleteTable().run()}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    Delete Table
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <div className="w-px h-6 bg-border mx-1" />
-          <ToolbarBtn
-            onClick={addImage}
-            isActive={false}
-            icon={
-              isUploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ImageIcon className="h-4 w-4" />
-              )
-            }
-          />
-          <div className="w-px h-6 bg-border mx-1" />
-          {/* Font Size Controls */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={decreaseFontSize}
-              className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
-              title="Decrease Font Size"
-            >
-              A-
-            </button>
-            <span className="text-xs text-muted-foreground min-w-[2rem] text-center select-none">
-              {fontSize}px
-            </span>
-            <button
-              onClick={increaseFontSize}
-              className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
-              title="Increase Font Size"
-            >
-              A+
-            </button>
+                )}
+                {editor.isActive("table") && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        editor.chain().focus().addColumnBefore().run()
+                      }
+                    >
+                      Add Column Before
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        editor.chain().focus().addColumnAfter().run()
+                      }
+                    >
+                      Add Column After
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => editor.chain().focus().deleteColumn().run()}
+                    >
+                      Delete Column
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => editor.chain().focus().addRowBefore().run()}
+                    >
+                      Add Row Before
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => editor.chain().focus().addRowAfter().run()}
+                    >
+                      Add Row After
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => editor.chain().focus().deleteRow().run()}
+                    >
+                      Delete Row
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => editor.chain().focus().deleteTable().run()}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      Delete Table
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="w-px h-6 bg-border mx-1" />
+            <ToolbarBtn
+              onClick={addImage}
+              isActive={false}
+              icon={
+                isUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-4 w-4" />
+                )
+              }
+            />
+            <div className="w-px h-6 bg-border mx-1" />
+            {/* Font Size Controls */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={decreaseFontSize}
+                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
+                title="Decrease Font Size"
+              >
+                A-
+              </button>
+              <span className="text-xs text-muted-foreground min-w-[2rem] text-center select-none">
+                {fontSize}px
+              </span>
+              <button
+                onClick={increaseFontSize}
+                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
+                title="Increase Font Size"
+              >
+                A+
+              </button>
+            </div>
           </div>
         </div>
       )}
-      <div
-        style={{ fontSize: `${fontSize}px` }}
-        className="transition-all duration-200"
-      >
-        <EditorContent editor={editor} className="prose-dynamic" />
+      <div className="mx-auto max-w-4xl px-4 md:px-8">
+        <div
+          style={{ fontSize: `${fontSize}px` }}
+          className="transition-all duration-200"
+        >
+          <EditorContent editor={editor} className="prose-dynamic" />
+        </div>
       </div>
       <AlertDialog
         isOpen={alertState.isOpen}
