@@ -9,6 +9,7 @@ import {
   getOrCreateMarkdownParser,
   parseMarkdown,
   createMarkdownSlice,
+  createPlainTextSlice,
 } from "../markdown-paste.ts";
 
 const testSchema = getSchema([
@@ -319,5 +320,123 @@ const wolf = "hopping";
       }
     });
     assert.strictEqual(boldText, "bold replacement");
+  });
+
+  it("explicitly parses ambiguous markdown when forced (e.g. *possibly markdown*)", () => {
+    // *possibly markdown* fails conservative auto-detection
+    assert.strictEqual(looksLikeMarkdown("*possibly markdown*"), false);
+
+    // But parseMarkdown parses it into italic formatting
+    const doc = parseMarkdown(testSchema, "*possibly markdown*");
+    assert.ok(doc);
+    const p = doc.child(0);
+    let hasItalic = false;
+    p.content.forEach((n) => {
+      if (n.marks.some((m) => m.type.name === "italic")) {
+        hasItalic = true;
+      }
+    });
+    assert.ok(hasItalic, "explicit parse should create italic mark");
+  });
+});
+
+describe("createPlainTextSlice and plain text insertion", () => {
+  it("creates literal plain text slice without markdown or html interpretation", () => {
+    const input = "## Heading\n\nThis is **bold**.";
+    const slice = createPlainTextSlice(testSchema, input);
+    assert.ok(slice);
+
+    const initialDoc = testSchema.node("doc", null, [
+      testSchema.node("paragraph", null, []),
+    ]);
+    let state = EditorState.create({ doc: initialDoc, schema: testSchema });
+    state = state.apply(state.tr.replaceSelection(slice));
+
+    // Must be 2 paragraphs of literal text, NO heading or bold marks
+    assert.strictEqual(state.doc.childCount, 2);
+    assert.strictEqual(state.doc.child(0).type.name, "paragraph");
+    assert.strictEqual(state.doc.child(0).textContent, "## Heading");
+    assert.strictEqual(state.doc.child(1).type.name, "paragraph");
+    assert.strictEqual(state.doc.child(1).textContent, "This is **bold**.");
+
+    // Verify no marks were applied
+    state.doc.descendants((node) => {
+      assert.strictEqual(
+        node.marks.length,
+        0,
+        `Node ${node.type.name} with text "${node.text}" should have no marks`
+      );
+    });
+  });
+
+  it("replaces selected text with literal plain text", () => {
+    const initialDoc = testSchema.node("doc", null, [
+      testSchema.node("paragraph", null, [
+        testSchema.text("Some text OLD VALUE more text."),
+      ]),
+    ]);
+
+    let state = EditorState.create({ doc: initialDoc, schema: testSchema });
+    // Select 'OLD VALUE' (pos 11 to 20)
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 11, 20))
+    );
+
+    const slice = createPlainTextSlice(testSchema, "**new value**");
+    assert.ok(slice);
+
+    state = state.apply(state.tr.replaceSelection(slice));
+
+    assert.strictEqual(state.doc.childCount, 1);
+    assert.strictEqual(
+      state.doc.child(0).textContent,
+      "Some text **new value** more text."
+    );
+
+    // Verify no bold mark exists
+    state.doc.descendants((node) => {
+      assert.strictEqual(
+        node.marks.length,
+        0,
+        "Should contain literal asterisks and no bold marks"
+      );
+    });
+  });
+
+  it("preserves multiline paragraph and hard-break structure for plain text", () => {
+    const multilineInput = `First paragraph.
+
+Second paragraph.
+Third line.`;
+
+    const slice = createPlainTextSlice(testSchema, multilineInput);
+    assert.ok(slice);
+
+    const initialDoc = testSchema.node("doc", null, [
+      testSchema.node("paragraph", null, [testSchema.text("Before.")]),
+      testSchema.node("paragraph", null, [testSchema.text("After.")]),
+    ]);
+
+    let state = EditorState.create({ doc: initialDoc, schema: testSchema });
+    // Cursor at end of 'Before.' (pos 8)
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 8))
+    );
+
+    state = state.apply(state.tr.replaceSelection(slice));
+
+    assert.strictEqual(state.doc.childCount, 4);
+    assert.strictEqual(state.doc.child(0).textContent, "Before.");
+    assert.strictEqual(state.doc.child(1).textContent, "First paragraph.");
+    assert.strictEqual(state.doc.child(2).textContent, "Second paragraph.Third line.");
+    assert.strictEqual(state.doc.child(3).textContent, "After.");
+
+    // Check hardBreak in 2nd paragraph
+    const p2 = state.doc.child(2);
+    let hasHardBreak = false;
+    p2.forEach((n) => {
+      if (n.type.name === "hardBreak") hasHardBreak = true;
+    });
+    assert.ok(hasHardBreak, "Should contain hardBreak node");
   });
 });

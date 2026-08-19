@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import { EditorView } from "@tiptap/pm/view";
-import { Schema, Slice, Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Schema, Slice, Fragment, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { MarkdownParser, defaultMarkdownParser } from "@tiptap/pm/markdown";
 
 declare module "@tiptap/core" {
@@ -11,6 +11,10 @@ declare module "@tiptap/core" {
        * Insert raw markdown string at the current selection.
        */
       insertMarkdown: (markdown: string) => ReturnType;
+      /**
+       * Insert literal plain text at the current selection without markdown or HTML parsing.
+       */
+      insertPlainText: (text: string) => ReturnType;
     };
   }
 }
@@ -120,6 +124,57 @@ export function createMarkdownSlice(schema: Schema, text: string): Slice | null 
 export function insertMarkdownAtSelection(view: EditorView, text: string): boolean {
   const { state, dispatch } = view;
   const slice = createMarkdownSlice(state.schema, text);
+  if (!slice) return false;
+
+  const tr = state.tr.replaceSelection(slice).scrollIntoView();
+  dispatch(tr);
+  return true;
+}
+
+/**
+ * Creates a ProseMirror Slice containing literal plain-text content.
+ * Single line input becomes an inline text slice; multiline input is split into
+ * paragraphs with hard breaks where appropriate.
+ */
+export function createPlainTextSlice(schema: Schema, text: string): Slice | null {
+  if (!text) return null;
+
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const paragraphs = normalized.split(/\n\n+/);
+
+  // Single line plain text -> inline text node slice
+  if (paragraphs.length === 1 && !paragraphs[0].includes("\n")) {
+    return new Slice(Fragment.from(schema.text(paragraphs[0])), 0, 0);
+  }
+
+  const pNodes = paragraphs.map((pText) => {
+    const lines = pText.split("\n");
+    const content: ProseMirrorNode[] = [];
+    lines.forEach((line, idx) => {
+      if (line) {
+        content.push(schema.text(line));
+      }
+      if (idx < lines.length - 1) {
+        if (schema.nodes.hardBreak) {
+          content.push(schema.nodes.hardBreak.create());
+        } else {
+          content.push(schema.text(" "));
+        }
+      }
+    });
+    return schema.nodes.paragraph.create(null, content);
+  });
+
+  return new Slice(Fragment.from(pNodes), 0, 0);
+}
+
+/**
+ * Inserts literal plain text into the editor at current selection without Markdown or HTML parsing.
+ * Preserves line/paragraph breaks and replaces selection cleanly.
+ */
+export function insertPlainTextAtSelection(view: EditorView, text: string): boolean {
+  const { state, dispatch } = view;
+  const slice = createPlainTextSlice(state.schema, text);
   if (!slice) return false;
 
   const tr = state.tr.replaceSelection(slice).scrollIntoView();
@@ -263,8 +318,25 @@ export const MarkdownPaste = Extension.create({
     return {
       insertMarkdown:
         (markdown: string) =>
-        ({ view }) => {
-          return insertMarkdownAtSelection(view, markdown);
+        ({ tr, dispatch, state }) => {
+          const slice = createMarkdownSlice(state.schema, markdown);
+          if (!slice) return false;
+
+          if (dispatch) {
+            tr.replaceSelection(slice).scrollIntoView();
+          }
+          return true;
+        },
+      insertPlainText:
+        (text: string) =>
+        ({ tr, dispatch, state }) => {
+          const slice = createPlainTextSlice(state.schema, text);
+          if (!slice) return false;
+
+          if (dispatch) {
+            tr.replaceSelection(slice).scrollIntoView();
+          }
+          return true;
         },
     };
   },
