@@ -27,6 +27,7 @@ GEMINI.md
 ROADMAP.md
 CONTEXT.md
 Context.md
+.agents/
 
 # debug
 npm-debug.log*
