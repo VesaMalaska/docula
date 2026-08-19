@@ -188,6 +188,14 @@ export default function DocPage() {
       user.displayName || user.email || "Unknown",
     );
     if (success) {
+      // Force fetch the freshest document before entering edit mode 
+      // to avoid initializing the editor with stale local useQuery state.
+      const freshDoc = await getDocument(id);
+      if (freshDoc) {
+        setContent(freshDoc.content);
+        setTitle(freshDoc.title);
+      }
+      
       setIsEditing(true);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
     } else {
