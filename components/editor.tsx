@@ -10,6 +10,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableMarkdownInputRule } from "./editor/table-markdown-input-rule";
+import { MarkdownPaste } from "@/lib/markdown-paste";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -29,6 +30,7 @@ import {
   Loader2,
   Link as LinkIcon,
   Table as TableIcon,
+  ClipboardPaste,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
@@ -90,6 +92,7 @@ export function Editor({
       TableHeader,
       TableCell,
       TableMarkdownInputRule,
+      MarkdownPaste,
     ],
     content: content,
     editable: editable,
@@ -238,6 +241,64 @@ export function Editor({
       .extendMarkRange("link")
       .setLink({ href: url })
       .run();
+  };
+
+  const handlePasteAsMarkdown = async () => {
+    if (!editor || !editable) return;
+    let text = "";
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        showAlert(
+          "Clipboard Unavailable",
+          "Your browser does not support clipboard reading or requires a secure (HTTPS) connection."
+        );
+        return;
+      }
+      text = await navigator.clipboard.readText();
+    } catch (err) {
+      console.warn("Failed to read clipboard text:", err);
+      showAlert(
+        "Clipboard Access Denied",
+        "Unable to read clipboard. Please check your browser permissions."
+      );
+      return;
+    }
+
+    if (!text) return;
+    try {
+      editor.chain().focus().insertMarkdown(text).run();
+    } catch (err) {
+      console.error("Failed to insert markdown:", err);
+    }
+  };
+
+  const handlePasteAsPlainText = async () => {
+    if (!editor || !editable) return;
+    let text = "";
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        showAlert(
+          "Clipboard Unavailable",
+          "Your browser does not support clipboard reading or requires a secure (HTTPS) connection."
+        );
+        return;
+      }
+      text = await navigator.clipboard.readText();
+    } catch (err) {
+      console.warn("Failed to read clipboard text:", err);
+      showAlert(
+        "Clipboard Access Denied",
+        "Unable to read clipboard. Please check your browser permissions."
+      );
+      return;
+    }
+
+    if (!text) return;
+    try {
+      editor.chain().focus().insertPlainText(text).run();
+    } catch (err) {
+      console.error("Failed to insert plain text:", err);
+    }
   };
 
   // Font Size Logic
@@ -427,6 +488,26 @@ export function Editor({
                 )
               }
             />
+            <div className="w-px h-6 bg-border mx-1" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none"
+                  title="Paste options"
+                  aria-label="Paste options"
+                >
+                  <ClipboardPaste className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={handlePasteAsMarkdown}>
+                  Paste as Markdown
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handlePasteAsPlainText}>
+                  Paste as Plain Text
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <div className="w-px h-6 bg-border mx-1" />
             {/* Font Size Controls */}
             <div className="flex items-center gap-1">
