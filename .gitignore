@@ -25,6 +25,8 @@
 *.pem
 GEMINI.md
 ROADMAP.md
+CONTEXT.md
+Context.md
 
 # debug
 npm-debug.log*

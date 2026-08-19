@@ -10,6 +10,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableMarkdownInputRule } from "./editor/table-markdown-input-rule";
+import { MarkdownPaste } from "@/lib/markdown-paste";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -90,6 +91,7 @@ export function Editor({
       TableHeader,
       TableCell,
       TableMarkdownInputRule,
+      MarkdownPaste,
     ],
     content: content,
     editable: editable,
