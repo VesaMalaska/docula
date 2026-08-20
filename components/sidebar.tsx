@@ -1,10 +1,12 @@
 "use client";
 
 
-import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings } from "lucide-react";
+import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings, Pencil } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace } from "@/lib/actions/spaces";
+import { RenameSpaceDialog } from "@/components/rename-space-dialog";
+import { Space } from "@/lib/types";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -110,6 +112,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceIsPublic, setNewSpaceIsPublic] = useState(false);
   const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
+  const [spaceToRename, setSpaceToRename] = useState<Space | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -277,6 +280,16 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                 <DropdownMenuItem 
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        setSpaceToRename(space);
+                                                    }}
+                                                    className="cursor-pointer"
+                                                >
+                                                    <Pencil className="mr-2 h-4 w-4" />
+                                                    <span>Rename Space</span>
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
                                                         setSpaceToDelete(space.id);
                                                     }}
                                                     className="text-destructive focus:text-destructive cursor-pointer"
@@ -331,6 +344,16 @@ export function Sidebar({ onClose }: SidebarProps) {
             variant="destructive"
             actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
         />
+
+       {spaceToRename && (
+            <RenameSpaceDialog
+                space={spaceToRename}
+                open={!!spaceToRename}
+                onOpenChange={(open) => {
+                    if (!open) setSpaceToRename(null);
+                }}
+            />
+        )}
     </aside>
   );
 }

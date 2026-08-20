@@ -1,4 +1,4 @@
-import { db, auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { 
   collection, 
   doc, 
@@ -13,10 +13,34 @@ import {
   deleteDoc
 } from "firebase/firestore";
 import { Space } from "@/lib/types";
+import { validateSpaceName } from "@/lib/space-validation";
+
+export { validateSpaceName };
+export type { SpaceNameValidationResult } from "@/lib/space-validation";
+
+export async function renameSpace(spaceId: string, name: string): Promise<string> {
+  const validation = validateSpaceName(name);
+  if (!validation.isValid) {
+    throw new Error(validation.error || "Invalid space name");
+  }
+
+  const spaceRef = doc(db, "spaces", spaceId);
+  await updateDoc(spaceRef, {
+    name: validation.trimmedName,
+    updatedAt: serverTimestamp(),
+  });
+
+  return validation.trimmedName;
+}
 
 export async function createSpace(name: string, isPublic: boolean, description: string = "", ownerId: string) {
+  const validation = validateSpaceName(name);
+  if (!validation.isValid) {
+    throw new Error(validation.error || "Invalid space name");
+  }
+
   const newSpace = {
-    name,
+    name: validation.trimmedName,
     description,
     isPublic,
     ownerId,
