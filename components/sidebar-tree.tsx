@@ -13,7 +13,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, FolderOutput } from "lucide-react";
 
 export function SidebarTree({ spaceId }: { spaceId: string }) {
   const { data: tree, isLoading, error } = useQuery({
@@ -116,6 +116,7 @@ function TreeNode({
 
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   return (
     <div>
@@ -148,8 +149,8 @@ function TreeNode({
             </div>
         </Link>
 
-        {/* Actions - visible on group hover */}
-        <div className="invisible group-hover:visible flex items-center gap-1">
+        {/* Actions - visible on group hover, or permanently if active/dropdown open */}
+        <div className={cn("flex items-center gap-1", (isActive || isDropdownOpen) ? "visible" : "invisible group-hover:visible")}>
             {level < 3 && (
                 <button 
                     onClick={(e) => createChild(e)}
@@ -160,7 +161,7 @@ function TreeNode({
                     {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
                 </button>
             )}
-            <DropdownMenu>
+            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <button 
                     onClick={(e) => {
@@ -173,25 +174,30 @@ function TreeNode({
                     <MoreHorizontal className="h-3.5 w-3.5" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    setIsDropdownOpen(false);
                     setShowMoveDialog(true);
                   }}
                   className="cursor-pointer"
                 >
+                  <FolderOutput className="h-4 w-4 mr-2" />
                   Move document...
                 </DropdownMenuItem>
+                <div className="h-px bg-muted my-1" />
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    setIsDropdownOpen(false);
                     setShowDeleteAlert(true);
                   }}
-                  className="text-destructive focus:text-destructive cursor-pointer"
+                  className="text-destructive focus:text-destructive cursor-pointer focus:bg-destructive/10"
                 >
+                  <Trash2 className="h-4 w-4 mr-2" />
                   Delete document
                 </DropdownMenuItem>
               </DropdownMenuContent>

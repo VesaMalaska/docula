@@ -449,9 +449,12 @@ export default function DocPage() {
               <div className="flex gap-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
+                    <button 
+                      className="flex items-center justify-center h-7 w-7 rounded border dark:border-zinc-700 dark:text-zinc-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                      title="Document actions"
+                      aria-label="Document actions"
+                    >
                       <MoreHorizontal className="h-4 w-4" />
-                      Actions
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-60">
