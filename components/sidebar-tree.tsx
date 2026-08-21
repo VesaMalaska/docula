@@ -11,6 +11,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoveDocumentDialog } from "@/components/move-document-dialog";
+import { MoreHorizontal, FolderOutput } from "lucide-react";
 
 export function SidebarTree({ spaceId }: { spaceId: string }) {
   const { data: tree, isLoading, error } = useQuery({
@@ -112,6 +115,8 @@ function TreeNode({
   });
 
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   return (
     <div>
@@ -144,8 +149,8 @@ function TreeNode({
             </div>
         </Link>
 
-        {/* Actions - visible on group hover */}
-        <div className="invisible group-hover:visible flex items-center gap-1">
+        {/* Actions - visible on group hover, or permanently if active/dropdown open */}
+        <div className={cn("flex items-center gap-1", (isActive || isDropdownOpen) ? "visible" : "invisible group-hover:visible")}>
             {level < 3 && (
                 <button 
                     onClick={(e) => createChild(e)}
@@ -156,18 +161,47 @@ function TreeNode({
                     {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
                 </button>
             )}
-            <button 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowDeleteAlert(true);
-                }}
-                disabled={isDeleting}
-                className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-muted cursor-pointer"
-                title="Delete Page"
-            >
-                {isDeleting ? <Loader2 className="h-3 w-3 animate-spin"/> : <Trash2 className="h-3 w-3" />}
-            </button>
+            <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted cursor-pointer"
+                    title="More actions"
+                >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDropdownOpen(false);
+                    setShowMoveDialog(true);
+                  }}
+                  className="cursor-pointer"
+                >
+                  <FolderOutput className="h-4 w-4 mr-2" />
+                  Move document...
+                </DropdownMenuItem>
+                <div className="h-px bg-muted my-1" />
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDropdownOpen(false);
+                    setShowDeleteAlert(true);
+                  }}
+                  className="text-destructive focus:text-destructive cursor-pointer focus:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete document
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </div>
 
@@ -195,6 +229,17 @@ function TreeNode({
         variant="destructive"
         actionLabel="Delete"
       />
+
+      {showMoveDialog && (
+        <MoveDocumentDialog
+          isOpen={showMoveDialog}
+          onClose={() => setShowMoveDialog(false)}
+          spaceId={spaceId}
+          documentId={node.id}
+          currentParentId={node.parentId}
+          documentTitle={node.title}
+        />
+      )}
     </div>
   );
 }

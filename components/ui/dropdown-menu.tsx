@@ -10,8 +10,13 @@ interface DropdownMenuContextType {
 
 const DropdownMenuContext = React.createContext<DropdownMenuContextType | undefined>(undefined);
 
-export function DropdownMenu({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false);
+export function DropdownMenu({ children, open: controlledOpen, onOpenChange }: { children: React.ReactNode, open?: boolean, onOpenChange?: (open: boolean) => void }) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const open = controlledOpen !== undefined ? controlledOpen : uncontrolledOpen;
+  const setOpen = (newOpen: boolean) => {
+    if (onOpenChange) onOpenChange(newOpen);
+    if (controlledOpen === undefined) setUncontrolledOpen(newOpen);
+  };
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {

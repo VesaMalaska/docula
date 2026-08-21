@@ -12,11 +12,13 @@ import {
   query,
   orderBy,
   where,
-  deleteDoc
+  deleteDoc,
+  writeBatch
 } from "firebase/firestore";
 import { Document, SidebarNode } from "@/lib/types";
 import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
+import { calculateNewPath, calculateDescendantPath } from "../utils/hierarchy";
 
 export async function createDocument(spaceId: string, parentId: string | null = null) {
   let path: string[] = [];
@@ -401,4 +403,92 @@ export async function searchDocuments(queryText: string, spaceId: string): Promi
     console.error("Error searching documents:", error);
     return [];
   }
+}
+
+export async function moveDocument(id: string, newParentId: string | null) {
+  const docRef = doc(db, "documents", id);
+  const docSnap = await getDoc(docRef);
+
+  if (!docSnap.exists()) {
+    throw new Error("Document not found");
+  }
+
+  const docData = docSnap.data();
+  const spaceId = docData.spaceId;
+
+  // No-op check
+  if (docData.parentId === newParentId) {
+    return; // Already in the requested location
+  }
+
+  // Prevent self-move
+  if (id === newParentId) {
+    throw new Error("Cannot move a document under itself");
+  }
+
+  let newPath: string[] = [];
+  
+  if (newParentId) {
+    const parentRef = doc(db, "documents", newParentId);
+    const parentSnap = await getDoc(parentRef);
+    
+    if (!parentSnap.exists()) {
+      throw new Error("Destination parent not found");
+    }
+    
+    const parentData = parentSnap.data();
+    
+    // Validate same space
+    if (parentData.spaceId !== spaceId) {
+      throw new Error("Cannot move document to a different space");
+    }
+
+    // Prevent cycle (moving under a descendant)
+    if ((parentData.path || []).includes(id)) {
+      throw new Error("Cannot move a document under its own descendant");
+    }
+    
+    newPath = calculateNewPath(parentData.path, newParentId);
+  }
+
+  // Find all descendants
+  const descendantsQuery = query(
+    collection(db, "documents"),
+    where("spaceId", "==", spaceId),
+    where("path", "array-contains", id)
+  );
+  
+  const descendantsSnap = await getDocs(descendantsQuery);
+  
+  // Use a single batch for atomicity. If limit (500) exceeded, it will fail safely.
+  const batch = writeBatch(db);
+  
+  if (descendantsSnap.docs.length + 1 > 500) {
+     throw new Error("Move operation exceeds batch limits (500 docs). Too many descendants.");
+  }
+  
+  // Update the moved document
+  batch.update(docRef, {
+    parentId: newParentId,
+    path: newPath,
+    updatedAt: serverTimestamp()
+  });
+
+  // Update descendants
+  descendantsSnap.docs.forEach((descendantDoc) => {
+    const descendantData = descendantDoc.data();
+    const oldPath = descendantData.path || [];
+    const index = oldPath.indexOf(id);
+    
+    if (index !== -1) {
+      const descendantNewPath = calculateDescendantPath(oldPath, id, newPath);
+      
+      batch.update(descendantDoc.ref, {
+        path: descendantNewPath,
+        updatedAt: serverTimestamp()
+      });
+    }
+  });
+
+  await batch.commit();
 }

@@ -61,6 +61,20 @@
             ]
         },
         {
+            "collectionGroup": "documents",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "spaceId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "path",
+                    "arrayConfig": "CONTAINS"
+                }
+            ]
+        },
+        {
             "collectionGroup": "spaces",
             "queryScope": "COLLECTION",
             "fields": [
