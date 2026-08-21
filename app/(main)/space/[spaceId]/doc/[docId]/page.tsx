@@ -30,9 +30,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Download } from "lucide-react";
+import { Download, FolderOutput, MoreHorizontal } from "lucide-react";
 import { jsonToMarkdown } from "@/lib/markdown-converter";
 import { jsonToDocx } from "@/lib/docx-converter";
+import { MoveDocumentDialog } from "@/components/move-document-dialog";
 
 function BacklinksList({
   docIds,
@@ -117,6 +118,7 @@ export default function DocPage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [content, setContent] = useState<any>(null);
@@ -448,22 +450,31 @@ export default function DocPage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer">
-                      <Download className="h-4 w-4" />
-                      Export
+                      <MoreHorizontal className="h-4 w-4" />
+                      Actions
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
+                      onClick={() => setIsMoveDialogOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      <FolderOutput className="h-4 w-4 mr-2" />
+                      Move document...
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       onClick={() => handleExport("markdown")}
                       className="cursor-pointer"
                     >
-                      Markdown (.md)
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Markdown (.md)
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => handleExport("docx")}
                       className="cursor-pointer"
                     >
-                      Word Document (.docx)
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Word Document (.docx)
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -514,6 +525,14 @@ export default function DocPage() {
           </div>
         </div>
       </div>
+      
+      <MoveDocumentDialog 
+        isOpen={isMoveDialogOpen}
+        onClose={() => setIsMoveDialogOpen(false)}
+        spaceId={spaceId}
+        documentId={id}
+        currentParentId={doc?.parentId || null}
+      />
     </div>
   );
 }

@@ -38,9 +38,11 @@ service cloud.firestore {
       // Allow create if user has access to the target space
       allow create: if isAuthenticated() && canAccessSpace(request.resource.data.spaceId);
       
-      // Allow read/write if user has access to the *existing* document's space
-      allow read, update, delete: if isAuthenticated() && canAccessSpace(resource.data.spaceId);
+      // Allow read/delete if user has access to the *existing* document's space
+      allow read, delete: if isAuthenticated() && canAccessSpace(resource.data.spaceId);
       
+      // Allow update if space access matches and spaceId is not changed
+      allow update: if isAuthenticated() && canAccessSpace(resource.data.spaceId) && request.resource.data.spaceId == resource.data.spaceId;
       match /content/{contentId} {
          allow read, write: if isAuthenticated() && canAccessSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId);
       }
