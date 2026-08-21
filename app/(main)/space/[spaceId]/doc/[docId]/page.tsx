@@ -454,7 +454,7 @@ export default function DocPage() {
                       Actions
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="min-w-60">
                     <DropdownMenuItem
                       onClick={() => setIsMoveDialogOpen(true)}
                       className="cursor-pointer"
@@ -532,6 +532,7 @@ export default function DocPage() {
         spaceId={spaceId}
         documentId={id}
         currentParentId={doc?.parentId || null}
+        documentTitle={doc?.title}
       />
     </div>
   );

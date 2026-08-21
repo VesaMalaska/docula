@@ -11,6 +11,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoveDocumentDialog } from "@/components/move-document-dialog";
+import { MoreHorizontal } from "lucide-react";
 
 export function SidebarTree({ spaceId }: { spaceId: string }) {
   const { data: tree, isLoading, error } = useQuery({
@@ -112,6 +115,7 @@ function TreeNode({
   });
 
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
 
   return (
     <div>
@@ -156,18 +160,42 @@ function TreeNode({
                     {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
                 </button>
             )}
-            <button 
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowDeleteAlert(true);
-                }}
-                disabled={isDeleting}
-                className="text-muted-foreground hover:text-destructive p-0.5 rounded hover:bg-muted cursor-pointer"
-                title="Delete Page"
-            >
-                {isDeleting ? <Loader2 className="h-3 w-3 animate-spin"/> : <Trash2 className="h-3 w-3" />}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted cursor-pointer"
+                    title="More actions"
+                >
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowMoveDialog(true);
+                  }}
+                  className="cursor-pointer"
+                >
+                  Move document...
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowDeleteAlert(true);
+                  }}
+                  className="text-destructive focus:text-destructive cursor-pointer"
+                >
+                  Delete document
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </div>
 
@@ -195,6 +223,17 @@ function TreeNode({
         variant="destructive"
         actionLabel="Delete"
       />
+
+      {showMoveDialog && (
+        <MoveDocumentDialog
+          isOpen={showMoveDialog}
+          onClose={() => setShowMoveDialog(false)}
+          spaceId={spaceId}
+          documentId={node.id}
+          currentParentId={node.parentId}
+          documentTitle={node.title}
+        />
+      )}
     </div>
   );
 }

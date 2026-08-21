@@ -6,9 +6,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button";
 import { getSidebarTree, moveDocument } from "@/lib/actions/document";
 import { SidebarNode } from "@/lib/types";
-import { ChevronRight, ChevronDown, FileText, Loader2, Home } from "lucide-react";
+import { ChevronRight, ChevronDown, FileText, Loader2, Home, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
+import { useEffect } from "react";
 
 interface MoveDocumentDialogProps {
   isOpen: boolean;
@@ -16,9 +17,10 @@ interface MoveDocumentDialogProps {
   spaceId: string;
   documentId: string;
   currentParentId: string | null;
+  documentTitle?: string;
 }
 
-export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, currentParentId }: MoveDocumentDialogProps) {
+export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, currentParentId, documentTitle }: MoveDocumentDialogProps) {
   const { data: tree, isLoading } = useQuery({
     queryKey: ["sidebar-tree", spaceId],
     queryFn: () => getSidebarTree(spaceId),
@@ -27,6 +29,30 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
 
   const [selectedParentId, setSelectedParentId] = useState<string | null | undefined>(undefined);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  
+  // Auto-expand ancestry on load
+  useEffect(() => {
+    if (isOpen && tree && currentParentId) {
+      const pathsToExpand = new Set<string>();
+      
+      const findPath = (nodes: SidebarNode[], targetId: string, currentPath: string[]): boolean => {
+        for (const node of nodes) {
+          const path = [...currentPath, node.id];
+          if (node.id === targetId) {
+            path.forEach(id => pathsToExpand.add(id));
+            return true;
+          }
+          if (node.children && findPath(node.children, targetId, path)) {
+            return true;
+          }
+        }
+        return false;
+      };
+      
+      findPath(tree, currentParentId, []);
+      setExpandedNodes(pathsToExpand);
+    }
+  }, [isOpen, tree, currentParentId]);
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -94,7 +120,8 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
             </button>
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{node.title}</span>
-            {node.id === currentParentId && <span className="text-xs text-muted-foreground ml-auto">(Current)</span>}
+            {node.id === currentParentId && <span className="text-xs text-muted-foreground ml-2">(Current)</span>}
+            {isSelected && <Check className="h-3.5 w-3.5 text-primary ml-auto" />}
           </div>
           {isOpen && hasChildren && (
             <div>{renderTree(node.children, level + 1, isTargetDescendant)}</div>
@@ -106,10 +133,12 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Move document</DialogTitle>
-          <DialogDescription>Select a new location for this document.</DialogDescription>
+          <DialogDescription>
+            Select a new location{documentTitle ? ` for "${documentTitle}"` : " for this document"}.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="py-4">
@@ -126,7 +155,8 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
               >
                 <Home className="h-4 w-4 text-muted-foreground ml-1" />
                 <span>Space root</span>
-                {currentParentId === null && <span className="text-xs text-muted-foreground ml-auto">(Current)</span>}
+                {currentParentId === null && <span className="text-xs text-muted-foreground ml-2">(Current)</span>}
+                {selectedParentId === null && <Check className="h-3.5 w-3.5 text-primary ml-auto" />}
               </div>
               <div className="my-1 border-t"></div>
               {renderTree(tree || [], 0, false)}

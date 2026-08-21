@@ -454,6 +454,7 @@ export async function moveDocument(id: string, newParentId: string | null) {
   // Find all descendants
   const descendantsQuery = query(
     collection(db, "documents"),
+    where("spaceId", "==", spaceId),
     where("path", "array-contains", id)
   );
   
