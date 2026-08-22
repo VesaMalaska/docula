@@ -1,11 +1,12 @@
 "use client";
 
 
-import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings, Pencil } from "lucide-react";
+import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings, Pencil, Upload } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace } from "@/lib/actions/spaces";
 import { RenameSpaceDialog } from "@/components/rename-space-dialog";
+import { ImportMarkdownDialog } from "@/components/import-markdown-dialog";
 import { Space } from "@/lib/types";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter, useParams } from "next/navigation";
@@ -113,6 +114,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [newSpaceIsPublic, setNewSpaceIsPublic] = useState(false);
   const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
   const [spaceToRename, setSpaceToRename] = useState<Space | null>(null);
+  const [spaceToImport, setSpaceToImport] = useState<Space | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -276,28 +278,39 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                     <MoreHorizontal className="h-3.5 w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-40">
-                                                <DropdownMenuItem 
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSpaceToRename(space);
-                                                    }}
-                                                    className="cursor-pointer"
-                                                >
-                                                    <Pencil className="mr-2 h-4 w-4" />
-                                                    <span>Rename Space</span>
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem 
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSpaceToDelete(space.id);
-                                                    }}
-                                                    className="text-destructive focus:text-destructive cursor-pointer"
-                                                >
-                                                    <Trash2 className="mr-2 h-4 w-4" />
-                                                    <span>Delete Space</span>
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
+                                             <DropdownMenuContent align="end" className="w-56">
+                                                 <DropdownMenuItem 
+                                                     onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         setSpaceToRename(space);
+                                                     }}
+                                                     className="cursor-pointer"
+                                                 >
+                                                     <Pencil className="mr-2 h-4 w-4" />
+                                                     <span>Rename Space</span>
+                                                 </DropdownMenuItem>
+                                                 <DropdownMenuItem 
+                                                     onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         setSpaceToImport(space);
+                                                     }}
+                                                     className="cursor-pointer"
+                                                 >
+                                                     <Upload className="mr-2 h-4 w-4" />
+                                                     <span>Import Markdown document…</span>
+                                                 </DropdownMenuItem>
+                                                 <div className="h-px bg-muted my-1" />
+                                                 <DropdownMenuItem 
+                                                     onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         setSpaceToDelete(space.id);
+                                                     }}
+                                                     className="text-destructive focus:text-destructive cursor-pointer"
+                                                 >
+                                                     <Trash2 className="mr-2 h-4 w-4" />
+                                                     <span>Delete Space</span>
+                                                 </DropdownMenuItem>
+                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>
                                 )}
@@ -352,6 +365,18 @@ export function Sidebar({ onClose }: SidebarProps) {
                 onOpenChange={(open) => {
                     if (!open) setSpaceToRename(null);
                 }}
+            />
+        )}
+
+       {spaceToImport && (
+            <ImportMarkdownDialog
+                isOpen={!!spaceToImport}
+                onClose={() => setSpaceToImport(null)}
+                spaceId={spaceToImport.id}
+                parentId={null}
+                destinationName={spaceToImport.name}
+                isSpaceRoot={true}
+                onSuccess={() => onClose?.()}
             />
         )}
     </aside>
