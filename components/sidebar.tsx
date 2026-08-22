@@ -278,7 +278,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                     <MoreHorizontal className="h-3.5 w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
-                                             <DropdownMenuContent align="end" className="w-48">
+                                             <DropdownMenuContent align="end" className="w-56">
                                                  <DropdownMenuItem 
                                                      onClick={(e) => {
                                                          e.stopPropagation();
@@ -297,7 +297,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                      className="cursor-pointer"
                                                  >
                                                      <Upload className="mr-2 h-4 w-4" />
-                                                     <span>Import Markdown…</span>
+                                                     <span>Import Markdown document…</span>
                                                  </DropdownMenuItem>
                                                  <div className="h-px bg-muted my-1" />
                                                  <DropdownMenuItem 
