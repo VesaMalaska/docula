@@ -72,6 +72,7 @@ export interface ToolbarActiveState {
   bulletList: boolean;
   orderedList: boolean;
   codeBlock: boolean;
+  blockquote: boolean;
   link: boolean;
   table: boolean;
 }
@@ -83,6 +84,7 @@ export const DEFAULT_TOOLBAR_STATE: ToolbarActiveState = {
   bulletList: false,
   orderedList: false,
   codeBlock: false,
+  blockquote: false,
   link: false,
   table: false,
 };
@@ -102,6 +104,7 @@ export function getToolbarActiveState(editor?: ActiveChecker | null): ToolbarAct
     bulletList: editor.isActive("bulletList"),
     orderedList: editor.isActive("orderedList"),
     codeBlock: editor.isActive("codeBlock"),
+    blockquote: editor.isActive("blockquote"),
     link: editor.isActive("link"),
     table: editor.isActive("table"),
   };

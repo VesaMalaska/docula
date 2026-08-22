@@ -173,12 +173,13 @@ describe("Editor Toolbar Utilities", () => {
       assert.strictEqual(getToolbarActiveState(createMockEditorForActive("bulletList")).bulletList, true);
       assert.strictEqual(getToolbarActiveState(createMockEditorForActive("orderedList")).orderedList, true);
       assert.strictEqual(getToolbarActiveState(createMockEditorForActive("codeBlock")).codeBlock, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("blockquote")).blockquote, true);
       assert.strictEqual(getToolbarActiveState(createMockEditorForActive("link")).link, true);
       assert.strictEqual(getToolbarActiveState(createMockEditorForActive("table")).table, true);
     });
 
-    it("accurately detects multiple simultaneous active states (e.g. bold + italic + link inside a table)", () => {
-      const activeSet = new Set(["bold", "italic", "link", "table"]);
+    it("accurately detects multiple simultaneous active states (e.g. bold + italic + link inside a blockquote and table)", () => {
+      const activeSet = new Set(["bold", "italic", "link", "blockquote", "table"]);
       const mockEditor = {
         isActive: (name: string) => activeSet.has(name),
       };
@@ -187,6 +188,7 @@ describe("Editor Toolbar Utilities", () => {
       assert.strictEqual(state.bold, true);
       assert.strictEqual(state.italic, true);
       assert.strictEqual(state.link, true);
+      assert.strictEqual(state.blockquote, true);
       assert.strictEqual(state.table, true);
       assert.strictEqual(state.code, false);
       assert.strictEqual(state.bulletList, false);

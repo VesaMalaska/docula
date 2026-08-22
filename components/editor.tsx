@@ -25,6 +25,7 @@ import {
   ListOrdered,
   Code,
   SquareCode,
+  Quote,
   Image as ImageIcon,
   Loader2,
   Link as LinkIcon,
@@ -414,13 +415,20 @@ export function Editor({
 
             <div className="w-px h-6 bg-border mx-1" />
 
-            {/* Code Block & Link */}
+            {/* Code Block, Blockquote & Link */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleCodeBlock().run()}
               isActive={toolbarState.codeBlock}
               icon={<SquareCode className="h-4 w-4" />}
               title="Code block"
               ariaLabel="Code block"
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleBlockquote().run()}
+              isActive={toolbarState.blockquote}
+              icon={<Quote className="h-4 w-4" />}
+              title="Blockquote"
+              ariaLabel="Blockquote"
             />
             <ToolbarBtn
               onClick={addLink}
