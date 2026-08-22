@@ -32,7 +32,16 @@ export function useExpandedNodes() {
     });
   };
 
+  const expandNode = (nodeId: string) => {
+    setExpandedNodes((prev) => {
+      if (prev.has(nodeId)) return prev;
+      const next = new Set(prev);
+      next.add(nodeId);
+      return next;
+    });
+  };
+
   const isExpanded = (nodeId: string) => expandedNodes.has(nodeId);
 
-  return { expandedNodes, toggleNode, isExpanded };
+  return { expandedNodes, toggleNode, expandNode, isExpanded };
 }

@@ -74,6 +74,17 @@ export function getOrCreateMarkdownParser(schema: Schema): MarkdownParser {
       }),
     },
     code_inline: { mark: "code", noCloseToken: true },
+
+    // Unsupported constructs degrade gracefully without throwing errors
+    image: { ignore: true, noCloseToken: true },
+    html_block: { ignore: true, noCloseToken: true },
+    html_inline: { ignore: true, noCloseToken: true },
+    table: { ignore: true },
+    thead: { ignore: true },
+    tbody: { ignore: true },
+    tr: { ignore: true },
+    th: { ignore: true },
+    td: { ignore: true },
   });
 
   parserCache.set(schema, parser);

@@ -20,7 +20,17 @@ import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreIma
 import { extractImageUrls, replaceImageUrls } from "../utils";
 import { calculateNewPath, calculateDescendantPath } from "../utils/hierarchy";
 
-export async function createDocument(spaceId: string, parentId: string | null = null) {
+export interface CreateDocumentOptions {
+  title?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content?: any;
+}
+
+export async function createDocument(
+  spaceId: string, 
+  parentId: string | null = null,
+  options?: CreateDocumentOptions
+) {
   let path: string[] = [];
   
   if (parentId) {
@@ -32,23 +42,27 @@ export async function createDocument(spaceId: string, parentId: string | null = 
     }
   }
 
+  const title = options?.title || "Untitled";
+  const content = options?.content ?? null;
+  const outboundLinks = content ? extractLinks(content) : [];
+
   const newDoc = {
     spaceId,
-    title: "Untitled",
+    title,
     parentId,
     path, 
     tags: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     lock: null,
-    outboundLinks: [],
+    outboundLinks,
     backlinks: [],
     deleted: false,
   };
 
   const docRef = await addDoc(collection(db, "documents"), newDoc);
   const contentRef = doc(db, "documents", docRef.id, "content", "main");
-  await setDoc(contentRef, { content: null });
+  await setDoc(contentRef, { content });
   return docRef.id;
 }
 

@@ -13,7 +13,8 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
-import { MoreHorizontal, FolderOutput } from "lucide-react";
+import { ImportMarkdownDialog } from "@/components/import-markdown-dialog";
+import { MoreHorizontal, FolderOutput, Upload } from "lucide-react";
 
 export function SidebarTree({ spaceId }: { spaceId: string }) {
   const { data: tree, isLoading, error } = useQuery({
@@ -116,6 +117,7 @@ function TreeNode({
 
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   return (
@@ -187,6 +189,18 @@ function TreeNode({
                   <FolderOutput className="h-4 w-4 mr-2" />
                   Move document...
                 </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDropdownOpen(false);
+                    setShowImportDialog(true);
+                  }}
+                  className="cursor-pointer"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import Markdown…
+                </DropdownMenuItem>
                 <div className="h-px bg-muted my-1" />
                 <DropdownMenuItem 
                   onClick={(e) => {
@@ -238,6 +252,22 @@ function TreeNode({
           documentId={node.id}
           currentParentId={node.parentId}
           documentTitle={node.title}
+        />
+      )}
+
+      {showImportDialog && (
+        <ImportMarkdownDialog
+          isOpen={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          spaceId={spaceId}
+          parentId={node.id}
+          destinationName={node.title}
+          isSpaceRoot={false}
+          onSuccess={() => {
+            if (!isOpen) {
+              toggleNode(node.id);
+            }
+          }}
         />
       )}
     </div>
