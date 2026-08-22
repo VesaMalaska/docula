@@ -617,4 +617,37 @@ describe("jsonToMarkdown serialization and whitespace policy", () => {
     const expected = "| Header A | Header B |\n| --- | --- |\n| Val 1 | Val 2 |\n";
     assert.strictEqual(jsonToMarkdown(doc), expected);
   });
+
+  it("Test 15: serializes H3, H4, and inline code correctly", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [{ type: "text", text: "Heading Three" }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 4 },
+          content: [{ type: "text", text: "Heading Four" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Use " },
+            {
+              type: "text",
+              text: "userId",
+              marks: [{ type: "code" }],
+            },
+            { type: "text", text: " here." },
+          ],
+        },
+      ],
+    };
+
+    const expected = "### Heading Three\n\n#### Heading Four\n\nUse `userId` here.\n";
+    assert.strictEqual(jsonToMarkdown(doc), expected);
+  });
 });
