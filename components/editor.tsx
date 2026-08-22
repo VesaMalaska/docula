@@ -1,6 +1,6 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ResizableImage } from "./editor/resizable-image";
 import Link from "@tiptap/extension-link";
@@ -24,14 +24,19 @@ import {
   List,
   ListOrdered,
   Code,
-  Heading1,
-  Heading2,
+  SquareCode,
+  Quote,
   Image as ImageIcon,
   Loader2,
   Link as LinkIcon,
   Table as TableIcon,
   ClipboardPaste,
 } from "lucide-react";
+import { BlockStyleSelector } from "./editor/block-style-selector";
+import {
+  getToolbarActiveState,
+  DEFAULT_TOOLBAR_STATE,
+} from "@/lib/editor-toolbar-utils";
 import { cn } from "@/lib/utils";
 import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
 import { optimizeImage } from "@/lib/image-optimization";
@@ -342,6 +347,12 @@ export function Editor({
   const increaseFontSize = () => updateFontSize(Math.min(fontSize + 1, 32));
   const decreaseFontSize = () => updateFontSize(Math.max(fontSize - 1, 12));
 
+  const toolbarState =
+    useEditorState({
+      editor,
+      selector: (ctx) => getToolbarActiveState(ctx.editor),
+    }) ?? DEFAULT_TOOLBAR_STATE;
+
   if (!editor) {
     return null;
   }
@@ -356,60 +367,89 @@ export function Editor({
           )}
         >
           <div className="mx-auto max-w-4xl px-4 md:px-8 py-2 flex gap-1 flex-wrap items-center">
+            {/* Block Style Selector */}
+            <BlockStyleSelector editor={editor} />
+
+            <div className="w-px h-6 bg-border mx-1" />
+
+            {/* Inline Formatting */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleBold().run()}
-              isActive={editor.isActive("bold")}
+              isActive={toolbarState.bold}
               icon={<Bold className="h-4 w-4" />}
+              title="Bold"
+              ariaLabel="Bold"
             />
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleItalic().run()}
-              isActive={editor.isActive("italic")}
+              isActive={toolbarState.italic}
               icon={<Italic className="h-4 w-4" />}
-            />
-            <div className="w-px h-6 bg-border mx-1" />
-            <ToolbarBtn
-              onClick={() =>
-                editor.chain().focus().toggleHeading({ level: 1 }).run()
-              }
-              isActive={editor.isActive("heading", { level: 1 })}
-              icon={<Heading1 className="h-4 w-4" />}
+              title="Italic"
+              ariaLabel="Italic"
             />
             <ToolbarBtn
-              onClick={() =>
-                editor.chain().focus().toggleHeading({ level: 2 }).run()
-              }
-              isActive={editor.isActive("heading", { level: 2 })}
-              icon={<Heading2 className="h-4 w-4" />}
+              onClick={() => editor.chain().focus().toggleCode().run()}
+              isActive={toolbarState.code}
+              icon={<Code className="h-4 w-4" />}
+              title="Inline code"
+              ariaLabel="Inline code"
             />
+
             <div className="w-px h-6 bg-border mx-1" />
+
+            {/* Lists */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleBulletList().run()}
-              isActive={editor.isActive("bulletList")}
+              isActive={toolbarState.bulletList}
               icon={<List className="h-4 w-4" />}
+              title="Bullet list"
+              ariaLabel="Bullet list"
             />
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              isActive={editor.isActive("orderedList")}
+              isActive={toolbarState.orderedList}
               icon={<ListOrdered className="h-4 w-4" />}
+              title="Ordered list"
+              ariaLabel="Ordered list"
             />
+
             <div className="w-px h-6 bg-border mx-1" />
+
+            {/* Code Block, Blockquote & Link */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-              isActive={editor.isActive("codeBlock")}
-              icon={<Code className="h-4 w-4" />}
+              isActive={toolbarState.codeBlock}
+              icon={<SquareCode className="h-4 w-4" />}
+              title="Code block"
+              ariaLabel="Code block"
+            />
+            <ToolbarBtn
+              onClick={() => editor.chain().focus().toggleBlockquote().run()}
+              isActive={toolbarState.blockquote}
+              icon={<Quote className="h-4 w-4" />}
+              title="Blockquote"
+              ariaLabel="Blockquote"
             />
             <ToolbarBtn
               onClick={addLink}
-              isActive={editor.isActive("link")}
+              isActive={toolbarState.link}
               icon={<LinkIcon className="h-4 w-4" />}
+              title="Insert link"
+              ariaLabel="Insert link"
             />
+
             <div className="w-px h-6 bg-border mx-1" />
+
+            {/* Table Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
+                  type="button"
+                  title="Table options"
+                  aria-label="Table options"
                   className={cn(
                     "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
-                    editor.isActive("table") &&
+                    toolbarState.table &&
                       "bg-accent text-accent-foreground",
                   )}
                 >
@@ -417,7 +457,7 @@ export function Editor({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {!editor.isActive("table") && (
+                {!toolbarState.table && (
                   <DropdownMenuItem
                     onClick={() =>
                       editor
@@ -430,7 +470,7 @@ export function Editor({
                     Insert Table
                   </DropdownMenuItem>
                 )}
-                {editor.isActive("table") && (
+                {toolbarState.table && (
                   <>
                     <DropdownMenuItem
                       onClick={() =>
@@ -476,10 +516,16 @@ export function Editor({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+
             <div className="w-px h-6 bg-border mx-1" />
+
+            {/* Image */}
             <ToolbarBtn
               onClick={addImage}
               isActive={false}
+              disabled={isUploading}
+              title="Insert image"
+              ariaLabel="Insert image"
               icon={
                 isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -488,10 +534,14 @@ export function Editor({
                 )
               }
             />
+
             <div className="w-px h-6 bg-border mx-1" />
+
+            {/* Paste Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
+                  type="button"
                   className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none"
                   title="Paste options"
                   aria-label="Paste options"
@@ -508,13 +558,17 @@ export function Editor({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
             <div className="w-px h-6 bg-border mx-1" />
+
             {/* Font Size Controls */}
             <div className="flex items-center gap-1">
               <button
+                type="button"
                 onClick={decreaseFontSize}
                 className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
-                title="Decrease Font Size"
+                title="Decrease font size"
+                aria-label="Decrease font size"
               >
                 A-
               </button>
@@ -522,9 +576,11 @@ export function Editor({
                 {fontSize}px
               </span>
               <button
+                type="button"
                 onClick={increaseFontSize}
                 className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
-                title="Increase Font Size"
+                title="Increase font size"
+                aria-label="Increase font size"
               >
                 A+
               </button>
@@ -552,18 +608,28 @@ export function Editor({
 
 function ToolbarBtn({
   onClick,
-  isActive,
+  isActive = false,
   icon,
+  title,
+  ariaLabel,
+  disabled = false,
 }: {
   onClick: () => void;
-  isActive: boolean;
+  isActive?: boolean;
   icon: React.ReactNode;
+  title?: string;
+  ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      disabled={disabled}
+      title={title || ariaLabel}
+      aria-label={ariaLabel || title}
       className={cn(
-        "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer",
+        "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed outline-none",
         isActive && "bg-accent text-accent-foreground",
       )}
     >
