@@ -4,6 +4,8 @@ import {
   BLOCK_STYLE_OPTIONS,
   getCurrentBlockStyle,
   applyBlockStyle,
+  DEFAULT_TOOLBAR_STATE,
+  getToolbarActiveState,
 } from "../editor-toolbar-utils.ts";
 
 describe("Editor Toolbar Utilities", () => {
@@ -149,6 +151,47 @@ describe("Editor Toolbar Utilities", () => {
       assert.strictEqual(applyBlockStyle(createMockEditor(4), BLOCK_STYLE_OPTIONS[4]), true);
 
       assert.deepStrictEqual(levelsTested, [1, 2, 3, 4]);
+    });
+  });
+
+  describe("getToolbarActiveState resolution", () => {
+    it("returns default inactive state when editor is null or undefined", () => {
+      assert.deepStrictEqual(getToolbarActiveState(null), DEFAULT_TOOLBAR_STATE);
+      assert.deepStrictEqual(getToolbarActiveState(undefined), DEFAULT_TOOLBAR_STATE);
+    });
+
+    it("accurately detects individual formatting active states", () => {
+      const createMockEditorForActive = (activeName: string) => ({
+        isActive: (name: string) => name === activeName,
+      });
+
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("bold")).bold, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("bold")).italic, false);
+
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("italic")).italic, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("code")).code, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("bulletList")).bulletList, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("orderedList")).orderedList, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("codeBlock")).codeBlock, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("link")).link, true);
+      assert.strictEqual(getToolbarActiveState(createMockEditorForActive("table")).table, true);
+    });
+
+    it("accurately detects multiple simultaneous active states (e.g. bold + italic + link inside a table)", () => {
+      const activeSet = new Set(["bold", "italic", "link", "table"]);
+      const mockEditor = {
+        isActive: (name: string) => activeSet.has(name),
+      };
+
+      const state = getToolbarActiveState(mockEditor);
+      assert.strictEqual(state.bold, true);
+      assert.strictEqual(state.italic, true);
+      assert.strictEqual(state.link, true);
+      assert.strictEqual(state.table, true);
+      assert.strictEqual(state.code, false);
+      assert.strictEqual(state.bulletList, false);
+      assert.strictEqual(state.orderedList, false);
+      assert.strictEqual(state.codeBlock, false);
     });
   });
 });

@@ -64,3 +64,45 @@ export function applyBlockStyle(
   }
   return editor.chain().focus().setParagraph().run();
 }
+
+export interface ToolbarActiveState {
+  bold: boolean;
+  italic: boolean;
+  code: boolean;
+  bulletList: boolean;
+  orderedList: boolean;
+  codeBlock: boolean;
+  link: boolean;
+  table: boolean;
+}
+
+export const DEFAULT_TOOLBAR_STATE: ToolbarActiveState = {
+  bold: false,
+  italic: false,
+  code: false,
+  bulletList: false,
+  orderedList: false,
+  codeBlock: false,
+  link: false,
+  table: false,
+};
+
+/**
+ * Resolves the active boolean states for all standard toolbar controls.
+ */
+export function getToolbarActiveState(editor?: ActiveChecker | null): ToolbarActiveState {
+  if (!editor) {
+    return DEFAULT_TOOLBAR_STATE;
+  }
+
+  return {
+    bold: editor.isActive("bold"),
+    italic: editor.isActive("italic"),
+    code: editor.isActive("code"),
+    bulletList: editor.isActive("bulletList"),
+    orderedList: editor.isActive("orderedList"),
+    codeBlock: editor.isActive("codeBlock"),
+    link: editor.isActive("link"),
+    table: editor.isActive("table"),
+  };
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ResizableImage } from "./editor/resizable-image";
 import Link from "@tiptap/extension-link";
@@ -32,6 +32,10 @@ import {
   ClipboardPaste,
 } from "lucide-react";
 import { BlockStyleSelector } from "./editor/block-style-selector";
+import {
+  getToolbarActiveState,
+  DEFAULT_TOOLBAR_STATE,
+} from "@/lib/editor-toolbar-utils";
 import { cn } from "@/lib/utils";
 import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
 import { optimizeImage } from "@/lib/image-optimization";
@@ -342,6 +346,12 @@ export function Editor({
   const increaseFontSize = () => updateFontSize(Math.min(fontSize + 1, 32));
   const decreaseFontSize = () => updateFontSize(Math.max(fontSize - 1, 12));
 
+  const toolbarState =
+    useEditorState({
+      editor,
+      selector: (ctx) => getToolbarActiveState(ctx.editor),
+    }) ?? DEFAULT_TOOLBAR_STATE;
+
   if (!editor) {
     return null;
   }
@@ -364,21 +374,21 @@ export function Editor({
             {/* Inline Formatting */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleBold().run()}
-              isActive={editor.isActive("bold")}
+              isActive={toolbarState.bold}
               icon={<Bold className="h-4 w-4" />}
               title="Bold"
               ariaLabel="Bold"
             />
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleItalic().run()}
-              isActive={editor.isActive("italic")}
+              isActive={toolbarState.italic}
               icon={<Italic className="h-4 w-4" />}
               title="Italic"
               ariaLabel="Italic"
             />
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleCode().run()}
-              isActive={editor.isActive("code")}
+              isActive={toolbarState.code}
               icon={<Code className="h-4 w-4" />}
               title="Inline code"
               ariaLabel="Inline code"
@@ -389,14 +399,14 @@ export function Editor({
             {/* Lists */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleBulletList().run()}
-              isActive={editor.isActive("bulletList")}
+              isActive={toolbarState.bulletList}
               icon={<List className="h-4 w-4" />}
               title="Bullet list"
               ariaLabel="Bullet list"
             />
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              isActive={editor.isActive("orderedList")}
+              isActive={toolbarState.orderedList}
               icon={<ListOrdered className="h-4 w-4" />}
               title="Ordered list"
               ariaLabel="Ordered list"
@@ -407,14 +417,14 @@ export function Editor({
             {/* Code Block & Link */}
             <ToolbarBtn
               onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-              isActive={editor.isActive("codeBlock")}
+              isActive={toolbarState.codeBlock}
               icon={<SquareCode className="h-4 w-4" />}
               title="Code block"
               ariaLabel="Code block"
             />
             <ToolbarBtn
               onClick={addLink}
-              isActive={editor.isActive("link")}
+              isActive={toolbarState.link}
               icon={<LinkIcon className="h-4 w-4" />}
               title="Insert link"
               ariaLabel="Insert link"
@@ -431,7 +441,7 @@ export function Editor({
                   aria-label="Table options"
                   className={cn(
                     "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
-                    editor.isActive("table") &&
+                    toolbarState.table &&
                       "bg-accent text-accent-foreground",
                   )}
                 >
@@ -439,7 +449,7 @@ export function Editor({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {!editor.isActive("table") && (
+                {!toolbarState.table && (
                   <DropdownMenuItem
                     onClick={() =>
                       editor
@@ -452,7 +462,7 @@ export function Editor({
                     Insert Table
                   </DropdownMenuItem>
                 )}
-                {editor.isActive("table") && (
+                {toolbarState.table && (
                   <>
                     <DropdownMenuItem
                       onClick={() =>
