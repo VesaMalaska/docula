@@ -650,4 +650,350 @@ describe("jsonToMarkdown serialization and whitespace policy", () => {
     const expected = "### Heading Three\n\n#### Heading Four\n\nUse `userId` here.\n";
     assert.strictEqual(jsonToMarkdown(doc), expected);
   });
+
+  describe("Inline Mark Transition & Delimiter Correctness", () => {
+    it("Case 1: Plain -> Italic -> Plain", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "plain " },
+              { type: "text", text: "italic", marks: [{ type: "italic" }] },
+              { type: "text", text: " plain" },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "plain *italic* plain\n");
+    });
+
+    it("Case 2: Plain -> Bold -> Plain", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "plain " },
+              { type: "text", text: "bold", marks: [{ type: "bold" }] },
+              { type: "text", text: " plain" },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "plain **bold** plain\n");
+    });
+
+    it("Case 3: Italic -> Bold", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "italic", marks: [{ type: "italic" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "bold", marks: [{ type: "bold" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "*italic* **bold**\n");
+    });
+
+    it("Case 4: Bold -> Italic", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "bold", marks: [{ type: "bold" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "italic", marks: [{ type: "italic" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "**bold** *italic*\n");
+    });
+
+    it("Case 5: Italic -> Bold+Italic -> Italic", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "italic ", marks: [{ type: "italic" }] },
+              {
+                type: "text",
+                text: "bold italic",
+                marks: [{ type: "italic" }, { type: "bold" }],
+              },
+              { type: "text", text: " italic", marks: [{ type: "italic" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "*italic **bold italic** italic*\n");
+    });
+
+    it("Case 6: Bold -> Bold+Italic -> Bold", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "bold ", marks: [{ type: "bold" }] },
+              {
+                type: "text",
+                text: "bold italic",
+                marks: [{ type: "bold" }, { type: "italic" }],
+              },
+              { type: "text", text: " bold", marks: [{ type: "bold" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "**bold *bold italic* bold**\n");
+    });
+
+    it("Case 7: Italic -> Bold label -> Italic (dialogue pattern)", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: '"Mää sie Pena..."', marks: [{ type: "italic" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "Pena:", marks: [{ type: "bold" }] },
+              { type: "text", text: " " },
+              { type: "text", text: '"Mitä hittoa..."', marks: [{ type: "italic" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(
+        jsonToMarkdown(doc),
+        '*"Mää sie Pena..."* **Pena:** *"Mitä hittoa..."*\n'
+      );
+    });
+
+    it("Case 8: Inline Code Adjacent to Italic", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "italic", marks: [{ type: "italic" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "code", marks: [{ type: "code" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "*italic* `code`\n");
+    });
+
+    it("Case 9: Inline Code Adjacent to Bold", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "bold", marks: [{ type: "bold" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "code", marks: [{ type: "code" }] },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "**bold** `code`\n");
+    });
+
+    it("Case 10: Bold link", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "bold link",
+                marks: [
+                  { type: "bold" },
+                  { type: "link", attrs: { href: "https://example.com" } },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(
+        jsonToMarkdown(doc),
+        "[**bold link**](https://example.com)\n"
+      );
+    });
+
+    it("Case 11: Italic link", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "italic link",
+                marks: [
+                  { type: "italic" },
+                  { type: "link", attrs: { href: "https://example.com" } },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(
+        jsonToMarkdown(doc),
+        "[*italic link*](https://example.com)\n"
+      );
+    });
+
+    it("Case 12: Bold+Italic link", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "bold italic link",
+                marks: [
+                  { type: "bold" },
+                  { type: "italic" },
+                  { type: "link", attrs: { href: "https://example.com" } },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(
+        jsonToMarkdown(doc),
+        "[***bold italic link***](https://example.com)\n"
+      );
+    });
+
+    it("Case 13: Simple bold regression", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "hello", marks: [{ type: "bold" }] }],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "**hello**\n");
+    });
+
+    it("Case 14: Simple italic regression", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "hello", marks: [{ type: "italic" }] }],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "*hello*\n");
+    });
+
+    it("Case 15: Simple strike regression", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "hello", marks: [{ type: "strike" }] }],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "~~hello~~\n");
+    });
+
+    it("Case 16: Simple inline code regression", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "hello", marks: [{ type: "code" }] }],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "`hello`\n");
+    });
+
+    it("Case 17: Simple link regression", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "hello",
+                marks: [{ type: "link", attrs: { href: "https://example.com" } }],
+              },
+            ],
+          },
+        ],
+      };
+      assert.strictEqual(jsonToMarkdown(doc), "[hello](https://example.com)\n");
+    });
+
+    it("Real Regression Fixture: Martta & Pena dialogue document", () => {
+      const doc = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Eräänä " },
+              { type: "text", text: "aamuna", marks: [{ type: "italic" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "Martta", marks: [{ type: "bold" }] },
+              { type: "text", text: " saapui navetasta", marks: [{ type: "bold" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "tupaan.", marks: [{ type: "italic" }] },
+              { type: "text", text: " " },
+              { type: "text", text: '"Mää sie Pena..."', marks: [{ type: "italic" }] },
+              { type: "text", text: " " },
+              { type: "text", text: "Pena:", marks: [{ type: "bold" }] },
+              { type: "text", text: " " },
+              { type: "text", text: '"Mitä hittoa..."', marks: [{ type: "italic" }] },
+            ],
+          },
+        ],
+      };
+
+      const expected =
+        'Eräänä *aamuna* **Martta saapui navetasta** *tupaan.* *"Mää sie Pena..."* **Pena:** *"Mitä hittoa..."*\n';
+      assert.strictEqual(jsonToMarkdown(doc), expected);
+    });
+  });
 });
+

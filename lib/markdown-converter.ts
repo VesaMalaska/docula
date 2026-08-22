@@ -203,70 +203,244 @@ function serializeTable(node: TiptapNode): string {
   return tableLines.join("\n");
 }
 
-/**
- * Serializes inline nodes (text, hardBreak, inline marks, etc.) without adding trailing newlines.
- */
-function serializeInline(nodes: TiptapNode[]): string {
-  return nodes.map((node) => processInlineNode(node)).join("");
+const MARK_ORDER: Record<string, number> = {
+  link: 0,
+  bold: 1,
+  italic: 2,
+  strike: 3,
+};
+
+function markEquals(a: TiptapMark, b: TiptapMark): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === "link") {
+    return (a.attrs?.href || "") === (b.attrs?.href || "");
+  }
+  return true;
 }
 
-function processInlineNode(node: TiptapNode): string {
-  switch (node.type) {
-    case "text": {
-      let text = node.text || "";
-      if (node.marks && node.marks.length > 0) {
-        node.marks.forEach((mark) => {
-          text = applyMark(text, mark);
-        });
-      }
-      return text;
-    }
-
-    case "hardBreak":
-      return "  \n";
-
-    case "image": {
-      const alt = node.attrs?.alt || "";
-      const src = node.attrs?.src || "";
-      if (!src) return "";
-      return `![${alt}](${src})`;
-    }
-
+function getMarkOpenDelimiter(mark: TiptapMark): string {
+  switch (mark.type) {
+    case "bold":
+      return "**";
+    case "italic":
+      return "*";
+    case "strike":
+      return "~~";
+    case "link":
+      return "[";
     default:
-      if (node.text) {
-        let text = node.text;
-        if (node.marks) {
-          node.marks.forEach((mark) => {
-            text = applyMark(text, mark);
-          });
-        }
-        return text;
-      }
-      if (node.content) {
-        return serializeInline(node.content);
-      }
+      return "";
+  }
+}
+
+function getMarkCloseDelimiter(mark: TiptapMark): string {
+  switch (mark.type) {
+    case "bold":
+      return "**";
+    case "italic":
+      return "*";
+    case "strike":
+      return "~~";
+    case "link":
+      return `](${mark.attrs?.href || ""})`;
+    default:
       return "";
   }
 }
 
 /**
- * Wraps text with appropriate Markdown formatting according to the mark type.
+ * Serializes inline nodes (text, hardBreak, inline marks, etc.) as a continuous stream
+ * tracking active mark stacks across node transitions.
  */
-function applyMark(text: string, mark: TiptapMark): string {
-  switch (mark.type) {
-    case "bold":
-      return `**${text}**`;
-    case "italic":
-      return `*${text}*`;
-    case "strike":
-      return `~~${text}~~`;
-    case "code":
-      return `\`${text}\``;
-    case "link": {
-      const href = mark.attrs?.href || "";
-      return `[${text}](${href})`;
+function serializeInline(nodes: TiptapNode[]): string {
+  if (!nodes || nodes.length === 0) return "";
+
+  let result = "";
+  let activeMarks: TiptapMark[] = [];
+
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+
+    if (node.type === "hardBreak") {
+      while (activeMarks.length > 0) {
+        const closed = activeMarks.pop()!;
+        result += getMarkCloseDelimiter(closed);
+      }
+      result += "  \n";
+      continue;
     }
-    default:
-      return text;
+
+    if (node.type === "image") {
+      while (activeMarks.length > 0) {
+        const closed = activeMarks.pop()!;
+        result += getMarkCloseDelimiter(closed);
+      }
+      const alt = node.attrs?.alt || "";
+      const src = node.attrs?.src || "";
+      if (src) {
+        result += `![${alt}](${src})`;
+      }
+      continue;
+    }
+
+    const text = node.text || "";
+    if (!text && (!node.content || node.content.length === 0)) {
+      continue;
+    }
+
+    if (node.content && node.content.length > 0) {
+      while (activeMarks.length > 0) {
+        const closed = activeMarks.pop()!;
+        result += getMarkCloseDelimiter(closed);
+      }
+      result += serializeInline(node.content);
+      continue;
+    }
+
+    const nodeMarks = node.marks || [];
+    const hasCodeMark = nodeMarks.some((m) => m.type === "code");
+
+    if (hasCodeMark) {
+      const linkMark = nodeMarks.find((m) => m.type === "link");
+      const targetMarks: TiptapMark[] = linkMark ? [linkMark] : [];
+
+      let commonLength = 0;
+      while (
+        commonLength < activeMarks.length &&
+        commonLength < targetMarks.length &&
+        markEquals(activeMarks[commonLength], targetMarks[commonLength])
+      ) {
+        commonLength++;
+      }
+
+      while (activeMarks.length > commonLength) {
+        const closed = activeMarks.pop()!;
+        result += getMarkCloseDelimiter(closed);
+      }
+
+      for (let m = commonLength; m < targetMarks.length; m++) {
+        const openMark = targetMarks[m];
+        result += getMarkOpenDelimiter(openMark);
+        activeMarks.push(openMark);
+      }
+
+      result += `\`${text}\``;
+      continue;
+    }
+
+    const validMarks = nodeMarks.filter((m) => MARK_ORDER[m.type] !== undefined);
+
+    const targetMarks: TiptapMark[] = [];
+    let activeMatchIndex = 0;
+    while (activeMatchIndex < activeMarks.length) {
+      const activeMark = activeMarks[activeMatchIndex];
+      const foundInNode = validMarks.find((m) => markEquals(m, activeMark));
+      if (foundInNode) {
+        targetMarks.push(activeMark);
+        activeMatchIndex++;
+      } else {
+        break;
+      }
+    }
+
+    const remainingMarks = validMarks.filter(
+      (m) => !targetMarks.some((tm) => markEquals(tm, m))
+    );
+    remainingMarks.sort(
+      (a, b) => (MARK_ORDER[a.type] ?? 99) - (MARK_ORDER[b.type] ?? 99)
+    );
+    targetMarks.push(...remainingMarks);
+
+    const match = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    const leadingSpace = match ? match[1] : "";
+    const coreText = match ? match[2] : "";
+    const trailingSpace = match ? match[3] : "";
+
+    if (!coreText) {
+      if (activeMarks.length > 0 && targetMarks.length === activeMarks.length) {
+        result += text;
+      } else {
+        let commonLength = 0;
+        while (
+          commonLength < activeMarks.length &&
+          commonLength < targetMarks.length &&
+          markEquals(activeMarks[commonLength], targetMarks[commonLength])
+        ) {
+          commonLength++;
+        }
+        while (activeMarks.length > commonLength) {
+          const closed = activeMarks.pop()!;
+          result += getMarkCloseDelimiter(closed);
+        }
+        for (let m = commonLength; m < targetMarks.length; m++) {
+          const openMark = targetMarks[m];
+          result += getMarkOpenDelimiter(openMark);
+          activeMarks.push(openMark);
+        }
+        result += text;
+      }
+      continue;
+    }
+
+    let commonLength = 0;
+    while (
+      commonLength < activeMarks.length &&
+      commonLength < targetMarks.length &&
+      markEquals(activeMarks[commonLength], targetMarks[commonLength])
+    ) {
+      commonLength++;
+    }
+
+    while (activeMarks.length > commonLength) {
+      const closed = activeMarks.pop()!;
+      result += getMarkCloseDelimiter(closed);
+    }
+
+    if (leadingSpace) {
+      result += leadingSpace;
+    }
+
+    for (let m = commonLength; m < targetMarks.length; m++) {
+      const openMark = targetMarks[m];
+      result += getMarkOpenDelimiter(openMark);
+      activeMarks.push(openMark);
+    }
+
+    result += coreText;
+
+    if (trailingSpace) {
+      const nextNode = i + 1 < nodes.length ? nodes[i + 1] : null;
+      let nextTargetMarks: TiptapMark[] = [];
+      if (nextNode && nextNode.type === "text") {
+        const nextNodeMarks = (nextNode.marks || []).filter((m) => MARK_ORDER[m.type] !== undefined);
+        let idx = 0;
+        while (idx < activeMarks.length) {
+          const am = activeMarks[idx];
+          if (nextNodeMarks.some((m) => markEquals(m, am))) {
+            nextTargetMarks.push(am);
+            idx++;
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (activeMarks.length > nextTargetMarks.length) {
+        while (activeMarks.length > nextTargetMarks.length) {
+          const closed = activeMarks.pop()!;
+          result += getMarkCloseDelimiter(closed);
+        }
+        result += trailingSpace;
+      } else {
+        result += trailingSpace;
+      }
+    }
   }
+
+  while (activeMarks.length > 0) {
+    const closed = activeMarks.pop()!;
+    result += getMarkCloseDelimiter(closed);
+  }
+
+  return result;
 }
