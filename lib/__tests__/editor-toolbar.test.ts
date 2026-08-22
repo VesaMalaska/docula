@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   BLOCK_STYLE_OPTIONS,
   getCurrentBlockStyle,
+  applyBlockStyle,
 } from "../editor-toolbar-utils.ts";
 
 describe("Editor Toolbar Utilities", () => {
@@ -91,6 +92,63 @@ describe("Editor Toolbar Utilities", () => {
       };
       const style = getCurrentBlockStyle(mockEditor);
       assert.strictEqual(style.id, "paragraph");
+    });
+  });
+
+  describe("applyBlockStyle deterministic command execution", () => {
+    it("handles null or undefined editor gracefully", () => {
+      assert.strictEqual(applyBlockStyle(null, BLOCK_STYLE_OPTIONS[0]), false);
+      assert.strictEqual(applyBlockStyle(undefined, BLOCK_STYLE_OPTIONS[1]), false);
+    });
+
+    it("executes setParagraph when Paragraph option is selected", () => {
+      let setParagraphCalled = false;
+      let focusCalled = false;
+
+      const mockEditor = {
+        chain: () => ({
+          focus: () => {
+            focusCalled = true;
+            return {
+              setHeading: () => ({ run: () => false }),
+              setParagraph: () => {
+                setParagraphCalled = true;
+                return { run: () => true };
+              },
+            };
+          },
+        }),
+      };
+
+      const result = applyBlockStyle(mockEditor, BLOCK_STYLE_OPTIONS[0]);
+      assert.strictEqual(result, true);
+      assert.strictEqual(focusCalled, true);
+      assert.strictEqual(setParagraphCalled, true);
+    });
+
+    it("executes setHeading with exact level when Heading option is selected", () => {
+      const levelsTested: number[] = [];
+
+      const createMockEditor = (expectedLevel: number) => ({
+        chain: () => ({
+          focus: () => ({
+            setHeading: (opts: { level: 1 | 2 | 3 | 4 }) => {
+              levelsTested.push(opts.level);
+              assert.strictEqual(opts.level, expectedLevel);
+              return { run: () => true };
+            },
+            setParagraph: () => ({ run: () => false }),
+          }),
+        }),
+      });
+
+      // Test H1, H2, H3, H4
+      assert.strictEqual(applyBlockStyle(createMockEditor(1), BLOCK_STYLE_OPTIONS[1]), true);
+      assert.strictEqual(applyBlockStyle(createMockEditor(2), BLOCK_STYLE_OPTIONS[2]), true);
+      assert.strictEqual(applyBlockStyle(createMockEditor(3), BLOCK_STYLE_OPTIONS[3]), true);
+      assert.strictEqual(applyBlockStyle(createMockEditor(4), BLOCK_STYLE_OPTIONS[4]), true);
+
+      assert.deepStrictEqual(levelsTested, [1, 2, 3, 4]);
     });
   });
 });

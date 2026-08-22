@@ -40,3 +40,27 @@ export function getCurrentBlockStyle(editor?: ActiveChecker | null): BlockStyleO
 
   return BLOCK_STYLE_OPTIONS[0];
 }
+
+export interface BlockStyleApplicable {
+  chain: () => {
+    focus: () => {
+      setHeading: (options: { level: 1 | 2 | 3 | 4 }) => { run: () => boolean };
+      setParagraph: () => { run: () => boolean };
+    };
+  };
+}
+
+/**
+ * Applies the selected block style using deterministic Tiptap commands.
+ * Uses setHeading({ level }) for headings and setParagraph() for paragraph.
+ */
+export function applyBlockStyle(
+  editor: BlockStyleApplicable | null | undefined,
+  option: BlockStyleOption
+): boolean {
+  if (!editor) return false;
+  if (option.level) {
+    return editor.chain().focus().setHeading({ level: option.level }).run();
+  }
+  return editor.chain().focus().setParagraph().run();
+}

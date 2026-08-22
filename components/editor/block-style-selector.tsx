@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type { Editor } from "@tiptap/react";
+import { useEditorState } from "@tiptap/react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -11,6 +12,7 @@ import {
 import {
   BLOCK_STYLE_OPTIONS,
   getCurrentBlockStyle,
+  applyBlockStyle,
 } from "@/lib/editor-toolbar-utils";
 import { ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,7 +22,11 @@ interface BlockStyleSelectorProps {
 }
 
 export function BlockStyleSelector({ editor }: BlockStyleSelectorProps) {
-  const currentStyle = getCurrentBlockStyle(editor);
+  const currentStyle =
+    useEditorState({
+      editor,
+      selector: (ctx) => getCurrentBlockStyle(ctx.editor),
+    }) ?? getCurrentBlockStyle(editor);
 
   return (
     <DropdownMenu>
@@ -45,16 +51,7 @@ export function BlockStyleSelector({ editor }: BlockStyleSelectorProps) {
             <DropdownMenuItem
               key={option.id}
               onClick={() => {
-                if (!editor) return;
-                if (option.level) {
-                  editor
-                    .chain()
-                    .focus()
-                    .toggleHeading({ level: option.level })
-                    .run();
-                } else {
-                  editor.chain().focus().setParagraph().run();
-                }
+                applyBlockStyle(editor, option);
               }}
               className={cn(
                 "flex items-center justify-between gap-2 text-xs",
