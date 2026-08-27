@@ -448,7 +448,7 @@ export function Editor({
                   title="Table options"
                   aria-label="Table options"
                   className={cn(
-                    "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
+                    "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     toolbarState.table &&
                       "bg-accent text-accent-foreground",
                   )}
@@ -459,7 +459,7 @@ export function Editor({
               <DropdownMenuContent align="start">
                 {!toolbarState.table && (
                   <DropdownMenuItem
-                    onClick={() =>
+                    onSelect={() =>
                       editor
                         .chain()
                         .focus()
@@ -473,41 +473,41 @@ export function Editor({
                 {toolbarState.table && (
                   <>
                     <DropdownMenuItem
-                      onClick={() =>
+                      onSelect={() =>
                         editor.chain().focus().addColumnBefore().run()
                       }
                     >
                       Add Column Before
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() =>
+                      onSelect={() =>
                         editor.chain().focus().addColumnAfter().run()
                       }
                     >
                       Add Column After
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => editor.chain().focus().deleteColumn().run()}
+                      onSelect={() => editor.chain().focus().deleteColumn().run()}
                     >
                       Delete Column
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => editor.chain().focus().addRowBefore().run()}
+                      onSelect={() => editor.chain().focus().addRowBefore().run()}
                     >
                       Add Row Before
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => editor.chain().focus().addRowAfter().run()}
+                      onSelect={() => editor.chain().focus().addRowAfter().run()}
                     >
                       Add Row After
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => editor.chain().focus().deleteRow().run()}
+                      onSelect={() => editor.chain().focus().deleteRow().run()}
                     >
                       Delete Row
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => editor.chain().focus().deleteTable().run()}
+                      onSelect={() => editor.chain().focus().deleteTable().run()}
                       className="text-destructive focus:text-destructive"
                     >
                       Delete Table
@@ -542,7 +542,7 @@ export function Editor({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none"
+                  className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   title="Paste options"
                   aria-label="Paste options"
                 >
@@ -550,10 +550,10 @@ export function Editor({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={handlePasteAsMarkdown}>
+                <DropdownMenuItem onSelect={handlePasteAsMarkdown}>
                   Paste as Markdown
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handlePasteAsPlainText}>
+                <DropdownMenuItem onSelect={handlePasteAsPlainText}>
                   Paste as Plain Text
                 </DropdownMenuItem>
               </DropdownMenuContent>

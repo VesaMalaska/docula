@@ -1,7 +1,7 @@
 "use client";
 
 
-import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings, Pencil, Upload } from "lucide-react";
+import { Plus, Loader2, X, Trash2, Globe, Lock, MoreHorizontal, Pencil, Upload } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace } from "@/lib/actions/spaces";
@@ -20,6 +20,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
+    DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
     Dialog,
@@ -272,15 +273,17 @@ export function Sidebar({ onClose }: SidebarProps) {
                                          <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <button 
-                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
+                                                    type="button"
+                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                                     title="Space Settings"
+                                                    aria-label="Space actions"
                                                 >
                                                     <MoreHorizontal className="h-3.5 w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
                                              <DropdownMenuContent align="end" className="w-56">
                                                  <DropdownMenuItem 
-                                                     onClick={(e) => {
+                                                     onSelect={(e) => {
                                                          e.stopPropagation();
                                                          setSpaceToRename(space);
                                                      }}
@@ -290,7 +293,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                      <span>Rename Space</span>
                                                  </DropdownMenuItem>
                                                  <DropdownMenuItem 
-                                                     onClick={(e) => {
+                                                     onSelect={(e) => {
                                                          e.stopPropagation();
                                                          setSpaceToImport(space);
                                                      }}
@@ -299,9 +302,9 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                      <Upload className="mr-2 h-4 w-4" />
                                                      <span>Import Markdown document…</span>
                                                  </DropdownMenuItem>
-                                                 <div className="h-px bg-muted my-1" />
+                                                 <DropdownMenuSeparator />
                                                  <DropdownMenuItem 
-                                                     onClick={(e) => {
+                                                     onSelect={(e) => {
                                                          e.stopPropagation();
                                                          setSpaceToDelete(space.id);
                                                      }}

@@ -11,7 +11,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
 import { ImportMarkdownDialog } from "@/components/import-markdown-dialog";
 import { MoreHorizontal, FolderOutput, Upload } from "lucide-react";
@@ -99,7 +99,7 @@ function TreeNode({
     },
   });
 
-  const { mutate: deleteDoc, isPending: isDeleting } = useMutation({
+  const { mutate: deleteDoc } = useMutation({
     mutationFn: async () => {
       // Assuming we have access to user here, but sidebar-tree doesn't import useAuth directly
       // Let's fix that
@@ -166,19 +166,17 @@ function TreeNode({
             <DropdownMenu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <button 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted cursor-pointer"
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     title="More actions"
+                    aria-label="Document actions"
                 >
                     <MoreHorizontal className="h-3.5 w-3.5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem 
-                  onClick={(e) => {
+                  onSelect={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setIsDropdownOpen(false);
@@ -190,7 +188,7 @@ function TreeNode({
                   Move document...
                 </DropdownMenuItem>
                 <DropdownMenuItem 
-                  onClick={(e) => {
+                  onSelect={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setIsDropdownOpen(false);
@@ -201,9 +199,9 @@ function TreeNode({
                   <Upload className="h-4 w-4 mr-2" />
                   Import Markdown document…
                 </DropdownMenuItem>
-                <div className="h-px bg-muted my-1" />
+                <DropdownMenuSeparator />
                 <DropdownMenuItem 
-                  onClick={(e) => {
+                  onSelect={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     setIsDropdownOpen(false);
