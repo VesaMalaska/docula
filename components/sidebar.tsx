@@ -13,7 +13,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
     DropdownMenu,
@@ -116,6 +116,8 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
   const [spaceToRename, setSpaceToRename] = useState<Space | null>(null);
   const [spaceToImport, setSpaceToImport] = useState<Space | null>(null);
+  const pendingDialogAction = useRef<{ action: "rename" | "import" | "delete"; space: Space } | null>(null);
+  const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -274,6 +276,10 @@ export function Sidebar({ onClose }: SidebarProps) {
                                             <DropdownMenuTrigger asChild>
                                                 <button 
                                                     type="button"
+                                                    ref={(el) => {
+                                                        if (el) triggerRefs.current.set(space.id, el);
+                                                        else triggerRefs.current.delete(space.id);
+                                                    }}
                                                     className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                                     title="Space Settings"
                                                     aria-label="Space actions"
@@ -281,11 +287,27 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                     <MoreHorizontal className="h-3.5 w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
-                                             <DropdownMenuContent align="end" className="w-56">
+                                             <DropdownMenuContent
+                                                 align="end"
+                                                 className="w-56"
+                                                 onCloseAutoFocus={(e) => {
+                                                     if (pendingDialogAction.current) {
+                                                         e.preventDefault();
+                                                         triggerRefs.current.get(space.id)?.focus();
+
+                                                         const { action, space: targetSpace } = pendingDialogAction.current;
+                                                         pendingDialogAction.current = null;
+
+                                                         if (action === "rename") setSpaceToRename(targetSpace);
+                                                         else if (action === "import") setSpaceToImport(targetSpace);
+                                                         else if (action === "delete") setSpaceToDelete(targetSpace.id);
+                                                     }
+                                                 }}
+                                             >
                                                  <DropdownMenuItem 
                                                      onSelect={(e) => {
                                                          e.stopPropagation();
-                                                         setSpaceToRename(space);
+                                                         pendingDialogAction.current = { action: "rename", space };
                                                      }}
                                                      className="cursor-pointer"
                                                  >
@@ -295,7 +317,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                  <DropdownMenuItem 
                                                      onSelect={(e) => {
                                                          e.stopPropagation();
-                                                         setSpaceToImport(space);
+                                                         pendingDialogAction.current = { action: "import", space };
                                                      }}
                                                      className="cursor-pointer"
                                                  >
@@ -306,7 +328,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                  <DropdownMenuItem 
                                                      onSelect={(e) => {
                                                          e.stopPropagation();
-                                                         setSpaceToDelete(space.id);
+                                                         pendingDialogAction.current = { action: "delete", space };
                                                      }}
                                                      className="text-destructive focus:text-destructive cursor-pointer"
                                                  >
