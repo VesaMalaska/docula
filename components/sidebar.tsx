@@ -118,6 +118,8 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [spaceToImport, setSpaceToImport] = useState<Space | null>(null);
   const pendingDialogAction = useRef<{ action: "rename" | "import" | "delete"; space: Space } | null>(null);
   const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const renameReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const importReturnFocusRef = useRef<HTMLButtonElement | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -291,12 +293,21 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                  align="end"
                                                  className="w-56"
                                                  onCloseAutoFocus={(e) => {
-                                                     if (pendingDialogAction.current) {
-                                                         e.preventDefault();
-                                                         triggerRefs.current.get(space.id)?.focus();
-
-                                                         const { action, space: targetSpace } = pendingDialogAction.current;
+                                                     const pendingAction = pendingDialogAction.current;
+                                                     if (pendingAction) {
                                                          pendingDialogAction.current = null;
+                                                         const { action, space: targetSpace } = pendingAction;
+
+                                                         const trigger = triggerRefs.current.get(targetSpace.id);
+                                                         if (trigger && trigger.isConnected) {
+                                                             e.preventDefault();
+                                                             trigger.focus();
+                                                             if (action === "rename") {
+                                                                 renameReturnFocusRef.current = trigger;
+                                                             } else if (action === "import") {
+                                                                 importReturnFocusRef.current = trigger;
+                                                             }
+                                                         }
 
                                                          if (action === "rename") setSpaceToRename(targetSpace);
                                                          else if (action === "import") setSpaceToImport(targetSpace);
@@ -388,8 +399,11 @@ export function Sidebar({ onClose }: SidebarProps) {
                 space={spaceToRename}
                 open={!!spaceToRename}
                 onOpenChange={(open) => {
-                    if (!open) setSpaceToRename(null);
+                    if (!open) {
+                        setSpaceToRename(null);
+                    }
                 }}
+                returnFocusRef={renameReturnFocusRef}
             />
         )}
 
@@ -402,6 +416,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 destinationName={spaceToImport.name}
                 isSpaceRoot={true}
                 onSuccess={() => onClose?.()}
+                returnFocusRef={importReturnFocusRef}
             />
         )}
     </aside>
