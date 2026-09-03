@@ -38,7 +38,7 @@ export default function MainLayout({
         className={cn(
           "fixed inset-0 z-40 bg-black/50 transition-opacity lg:hidden",
           isSidebarOpen
-            ? "opacity-100 pointer-events-auto"
+            ? "opacity-100"
             : "opacity-0 pointer-events-none",
         )}
         onClick={() => setIsSidebarOpen(false)}
