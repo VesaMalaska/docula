@@ -1,7 +1,7 @@
 "use client";
 
 
-import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings, Pencil, Upload } from "lucide-react";
+import { Plus, Loader2, X, Trash2, Globe, Lock, MoreHorizontal, Pencil, Upload } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace } from "@/lib/actions/spaces";
@@ -13,13 +13,14 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
+    DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
     Dialog,
@@ -115,6 +116,11 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
   const [spaceToRename, setSpaceToRename] = useState<Space | null>(null);
   const [spaceToImport, setSpaceToImport] = useState<Space | null>(null);
+  const pendingDialogAction = useRef<{ action: "rename" | "import" | "delete"; space: Space } | null>(null);
+  const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const renameReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const importReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const deleteReturnFocusRef = useRef<HTMLButtonElement | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -272,17 +278,50 @@ export function Sidebar({ onClose }: SidebarProps) {
                                          <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <button 
-                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
+                                                    type="button"
+                                                    ref={(el) => {
+                                                        if (el) triggerRefs.current.set(space.id, el);
+                                                        else triggerRefs.current.delete(space.id);
+                                                    }}
+                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                                     title="Space Settings"
+                                                    aria-label="Space actions"
                                                 >
                                                     <MoreHorizontal className="h-3.5 w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
-                                             <DropdownMenuContent align="end" className="w-56">
+                                             <DropdownMenuContent
+                                                 align="end"
+                                                 className="w-56"
+                                                 onCloseAutoFocus={(e) => {
+                                                     const pendingAction = pendingDialogAction.current;
+                                                     if (pendingAction) {
+                                                         pendingDialogAction.current = null;
+                                                         const { action, space: targetSpace } = pendingAction;
+
+                                                         const trigger = triggerRefs.current.get(targetSpace.id);
+                                                         if (trigger && trigger.isConnected) {
+                                                             e.preventDefault();
+                                                             trigger.focus();
+                                                             if (action === "rename") {
+                                                                 renameReturnFocusRef.current = trigger;
+                                                             } else if (action === "import") {
+                                                                 importReturnFocusRef.current = trigger;
+                                                             } else if (action === "delete") {
+                                                                 deleteReturnFocusRef.current = trigger;
+                                                             }
+                                                         }
+
+                                                         if (action === "rename") setSpaceToRename(targetSpace);
+                                                         else if (action === "import") setSpaceToImport(targetSpace);
+                                                         else if (action === "delete") setSpaceToDelete(targetSpace.id);
+                                                     }
+                                                 }}
+                                             >
                                                  <DropdownMenuItem 
-                                                     onClick={(e) => {
+                                                     onSelect={(e) => {
                                                          e.stopPropagation();
-                                                         setSpaceToRename(space);
+                                                         pendingDialogAction.current = { action: "rename", space };
                                                      }}
                                                      className="cursor-pointer"
                                                  >
@@ -290,20 +329,20 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                      <span>Rename Space</span>
                                                  </DropdownMenuItem>
                                                  <DropdownMenuItem 
-                                                     onClick={(e) => {
+                                                     onSelect={(e) => {
                                                          e.stopPropagation();
-                                                         setSpaceToImport(space);
+                                                         pendingDialogAction.current = { action: "import", space };
                                                      }}
                                                      className="cursor-pointer"
                                                  >
                                                      <Upload className="mr-2 h-4 w-4" />
                                                      <span>Import Markdown document…</span>
                                                  </DropdownMenuItem>
-                                                 <div className="h-px bg-muted my-1" />
+                                                 <DropdownMenuSeparator />
                                                  <DropdownMenuItem 
-                                                     onClick={(e) => {
+                                                     onSelect={(e) => {
                                                          e.stopPropagation();
-                                                         setSpaceToDelete(space.id);
+                                                         pendingDialogAction.current = { action: "delete", space };
                                                      }}
                                                      className="text-destructive focus:text-destructive cursor-pointer"
                                                  >
@@ -348,23 +387,29 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
       </div>
       
-       <AlertDialog
-            isOpen={!!spaceToDelete}
-            onClose={() => setSpaceToDelete(null)}
-            title="Delete Space"
-            description="Are you sure you want to delete this space? You can restore it from the trashbin later."
-            onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
-            variant="destructive"
-            actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
-        />
+       {spaceToDelete && (
+            <AlertDialog
+                isOpen={!!spaceToDelete}
+                onClose={() => setSpaceToDelete(null)}
+                title="Delete Space"
+                description="Are you sure you want to delete this space? You can restore it from the trashbin later."
+                onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
+                variant="destructive"
+                actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
+                returnFocusRef={deleteReturnFocusRef}
+            />
+        )}
 
        {spaceToRename && (
             <RenameSpaceDialog
                 space={spaceToRename}
                 open={!!spaceToRename}
                 onOpenChange={(open) => {
-                    if (!open) setSpaceToRename(null);
+                    if (!open) {
+                        setSpaceToRename(null);
+                    }
                 }}
+                returnFocusRef={renameReturnFocusRef}
             />
         )}
 
@@ -377,6 +422,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 destinationName={spaceToImport.name}
                 isSpaceRoot={true}
                 onSuccess={() => onClose?.()}
+                returnFocusRef={importReturnFocusRef}
             />
         )}
     </aside>

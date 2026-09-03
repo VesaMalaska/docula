@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
+import * as React from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface AlertDialogProps {
   isOpen: boolean;
@@ -14,6 +20,8 @@ interface AlertDialogProps {
   cancelLabel?: string;
   onAction?: () => void;
   variant?: "default" | "destructive";
+  /** Ref to the element that should receive focus when the dialog closes. */
+  returnFocusRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
 export function AlertDialog({
@@ -25,97 +33,92 @@ export function AlertDialog({
   cancelLabel = "Cancel",
   onAction,
   variant = "default",
+  returnFocusRef,
 }: AlertDialogProps) {
-  const [isMounted, setIsMounted] = useState(false);
+  const isPointerInteractionRef = React.useRef(false);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "unset";
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      onClose();
     }
-    return () => {
-      document.body.style.overflow = "unset";
-    };
-  }, [isOpen]);
+  };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
+  const handleCloseAutoFocus = (event: Event) => {
+    const target = returnFocusRef?.current;
+    const isPointer = isPointerInteractionRef.current;
+    isPointerInteractionRef.current = false;
+
+    if (returnFocusRef) {
+      returnFocusRef.current = null;
+    }
+
+    if (target?.isConnected) {
+      event.preventDefault();
+      if (isPointer) {
+        target.focus({ focusVisible: false } as FocusOptions);
+      } else {
+        target.focus();
       }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+    }
+    // Without a custom target, allow Radix to restore focus to its own
+    // DialogTrigger when one exists.
+  };
 
-  if (!isMounted || !isOpen) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
-      {/* Overlay */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" 
-        onClick={onClose}
-      />
-      
-      {/* Dialog Content */}
-      <div 
-        className={cn(
-          "relative w-full max-w-md scale-100 rounded-xl border border-border bg-background p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200",
-          "flex flex-col gap-4"
-        )}
+  return (
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <DialogContent
         role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
+        className="sm:max-w-md"
+        onCloseAutoFocus={handleCloseAutoFocus}
+        onPointerDown={() => {
+          isPointerInteractionRef.current = true;
+        }}
+        onPointerDownOutside={() => {
+          isPointerInteractionRef.current = true;
+        }}
+        onKeyDown={() => {
+          isPointerInteractionRef.current = false;
+        }}
       >
-        <div className="flex items-start justify-between gap-4">
-          <h2 id="alert-dialog-title" className="text-xl font-semibold tracking-tight">
-            {title}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
 
-        <p id="alert-dialog-description" className="text-sm text-muted-foreground leading-relaxed">
-          {description}
-        </p>
-
-        <div className="mt-2 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            onClick={() => {
-              onAction?.();
-              onClose();
-            }}
-            className={cn(
-              "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 shadow-sm",
-              variant === "destructive" 
-                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" 
-                : "bg-primary text-primary-foreground hover:bg-primary/90"
-            )}
-          >
-            {actionLabel}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
+        <DialogFooter className="gap-2 sm:gap-2">
+          {onAction ? (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClose}
+              >
+                {cancelLabel}
+              </Button>
+              <Button
+                type="button"
+                variant={variant === "destructive" ? "destructive" : "default"}
+                onClick={() => {
+                  if (returnFocusRef) {
+                    returnFocusRef.current = null;
+                  }
+                  onAction();
+                  onClose();
+                }}
+              >
+                {actionLabel}
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              onClick={onClose}
+            >
+              {actionLabel}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

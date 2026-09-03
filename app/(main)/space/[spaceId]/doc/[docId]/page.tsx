@@ -305,7 +305,7 @@ export default function DocPage() {
           } else {
             imagesToDelete.push(signedUrl);
           }
-        } catch (e) {
+        } catch {
           console.error("Invalid session image URL:", signedUrl);
         }
       });
@@ -450,7 +450,8 @@ export default function DocPage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button 
-                      className="flex items-center justify-center h-7 w-7 rounded border dark:border-zinc-700 dark:text-zinc-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                      type="button"
+                      className="flex items-center justify-center h-7 w-7 rounded border dark:border-zinc-700 dark:text-zinc-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       title="Document actions"
                       aria-label="Document actions"
                     >
@@ -459,21 +460,21 @@ export default function DocPage() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-60">
                     <DropdownMenuItem
-                      onClick={() => setIsMoveDialogOpen(true)}
+                      onSelect={() => setIsMoveDialogOpen(true)}
                       className="cursor-pointer"
                     >
                       <FolderOutput className="h-4 w-4 mr-2" />
                       Move document...
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => handleExport("markdown")}
+                      onSelect={() => handleExport("markdown")}
                       className="cursor-pointer"
                     >
                       <Download className="h-4 w-4 mr-2" />
                       Export Markdown (.md)
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => handleExport("docx")}
+                      onSelect={() => handleExport("docx")}
                       className="cursor-pointer"
                     >
                       <Download className="h-4 w-4 mr-2" />

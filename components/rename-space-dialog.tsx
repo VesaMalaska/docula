@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState } from "react";
 import {
   Dialog,
@@ -26,6 +27,8 @@ interface RenameSpaceDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   trigger?: React.ReactNode;
+  /** Ref to the element that should receive focus when the dialog closes. */
+  returnFocusRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
 function RenameSpaceForm({
@@ -130,6 +133,7 @@ export function RenameSpaceDialog({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   trigger,
+  returnFocusRef,
 }: RenameSpaceDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -143,10 +147,28 @@ export function RenameSpaceDialog({
     }
   };
 
+  const handleCloseAutoFocus = (event: Event) => {
+    const target = returnFocusRef?.current;
+
+    if (returnFocusRef) {
+      returnFocusRef.current = null;
+    }
+
+    if (target?.isConnected) {
+      event.preventDefault();
+      target.focus();
+    }
+    // Without a custom target, allow Radix to restore focus to its own
+    // DialogTrigger when one exists.
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent
+        className="sm:max-w-[425px]"
+        onCloseAutoFocus={handleCloseAutoFocus}
+      >
         {isOpen && (
           <RenameSpaceForm
             space={space}

@@ -7,14 +7,15 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from "../ui/dropdown-menu";
 import {
   BLOCK_STYLE_OPTIONS,
   getCurrentBlockStyle,
   applyBlockStyle,
 } from "@/lib/editor-toolbar-utils";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BlockStyleSelectorProps {
@@ -34,7 +35,7 @@ export function BlockStyleSelector({ editor }: BlockStyleSelectorProps) {
         <button
           type="button"
           className={cn(
-            "flex items-center justify-between gap-1.5 rounded px-2 py-1 text-xs font-medium min-w-[105px] h-7 border border-transparent hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none",
+            "flex items-center justify-between gap-1.5 rounded px-2 py-1 text-xs font-medium min-w-[105px] h-7 border border-transparent hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
             currentStyle.id !== "paragraph" && "bg-accent/60 text-accent-foreground",
           )}
           title={`Text style: ${currentStyle.label}`}
@@ -45,24 +46,31 @@ export function BlockStyleSelector({ editor }: BlockStyleSelectorProps) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[130px]">
-        {BLOCK_STYLE_OPTIONS.map((option) => {
-          const isActive = currentStyle.id === option.id;
-          return (
-            <DropdownMenuItem
-              key={option.id}
-              onClick={() => {
-                applyBlockStyle(editor, option);
-              }}
-              className={cn(
-                "flex items-center justify-between gap-2 text-xs",
-                isActive && "font-semibold text-accent-foreground",
-              )}
-            >
-              <span>{option.label}</span>
-              {isActive && <Check className="h-3.5 w-3.5 shrink-0 opacity-80" />}
-            </DropdownMenuItem>
-          );
-        })}
+        <DropdownMenuRadioGroup
+          value={currentStyle.id}
+          onValueChange={(value) => {
+            const option = BLOCK_STYLE_OPTIONS.find((o) => o.id === value);
+            if (option) {
+              applyBlockStyle(editor, option);
+            }
+          }}
+        >
+          {BLOCK_STYLE_OPTIONS.map((option) => {
+            const isActive = currentStyle.id === option.id;
+            return (
+              <DropdownMenuRadioItem
+                key={option.id}
+                value={option.id}
+                className={cn(
+                  "flex items-center gap-2 text-xs cursor-pointer",
+                  isActive && "font-semibold text-accent-foreground",
+                )}
+              >
+                <span>{option.label}</span>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState, useRef, ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -29,6 +30,8 @@ interface ImportMarkdownDialogProps {
   destinationName?: string;
   isSpaceRoot?: boolean;
   onSuccess?: (newDocId: string) => void;
+  /** Ref to the element that should receive focus when the dialog closes. */
+  returnFocusRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
 export function ImportMarkdownDialog({
@@ -39,6 +42,7 @@ export function ImportMarkdownDialog({
   destinationName,
   isSpaceRoot = false,
   onSuccess,
+  returnFocusRef,
 }: ImportMarkdownDialogProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,9 +134,27 @@ export function ImportMarkdownDialog({
     ? `Import a Markdown document into "${destinationName || "Space"}".`
     : `Import a Markdown document under "${destinationName || "Document"}".`;
 
+  const handleCloseAutoFocus = (event: Event) => {
+    const target = returnFocusRef?.current;
+
+    if (returnFocusRef) {
+      returnFocusRef.current = null;
+    }
+
+    if (target?.isConnected) {
+      event.preventDefault();
+      target.focus();
+    }
+    // Without a custom target, allow Radix to restore focus to its own
+    // DialogTrigger when one exists.
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent
+        className="sm:max-w-[480px]"
+        onCloseAutoFocus={handleCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle>Import Markdown</DialogTitle>
           <DialogDescription>{descriptionText}</DialogDescription>
