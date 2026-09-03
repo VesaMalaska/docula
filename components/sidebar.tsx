@@ -120,6 +120,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const renameReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const importReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const deleteReturnFocusRef = useRef<HTMLButtonElement | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -306,6 +307,8 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                                  renameReturnFocusRef.current = trigger;
                                                              } else if (action === "import") {
                                                                  importReturnFocusRef.current = trigger;
+                                                             } else if (action === "delete") {
+                                                                 deleteReturnFocusRef.current = trigger;
                                                              }
                                                          }
 
@@ -384,15 +387,18 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
       </div>
       
-       <AlertDialog
-            isOpen={!!spaceToDelete}
-            onClose={() => setSpaceToDelete(null)}
-            title="Delete Space"
-            description="Are you sure you want to delete this space? You can restore it from the trashbin later."
-            onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
-            variant="destructive"
-            actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
-        />
+       {spaceToDelete && (
+            <AlertDialog
+                isOpen={!!spaceToDelete}
+                onClose={() => setSpaceToDelete(null)}
+                title="Delete Space"
+                description="Are you sure you want to delete this space? You can restore it from the trashbin later."
+                onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
+                variant="destructive"
+                actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
+                returnFocusRef={deleteReturnFocusRef}
+            />
+        )}
 
        {spaceToRename && (
             <RenameSpaceDialog
