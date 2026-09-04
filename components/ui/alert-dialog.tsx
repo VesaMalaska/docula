@@ -21,7 +21,9 @@ interface AlertDialogProps {
   onAction?: () => void;
   variant?: "default" | "destructive";
   /** Ref to the element that should receive focus when the dialog closes. */
-  returnFocusRef?: React.MutableRefObject<HTMLButtonElement | null>;
+  returnFocusRef?: React.MutableRefObject<HTMLElement | null>;
+  /** Optional ref to the element that should receive focus when the action is confirmed. */
+  actionReturnFocusRef?: React.MutableRefObject<HTMLElement | null>;
 }
 
 export function AlertDialog({
@@ -34,6 +36,7 @@ export function AlertDialog({
   onAction,
   variant = "default",
   returnFocusRef,
+  actionReturnFocusRef,
 }: AlertDialogProps) {
   const isPointerInteractionRef = React.useRef(false);
 
@@ -50,6 +53,10 @@ export function AlertDialog({
 
     if (returnFocusRef) {
       returnFocusRef.current = null;
+    }
+
+    if (actionReturnFocusRef) {
+      actionReturnFocusRef.current = null;
     }
 
     if (target?.isConnected) {
@@ -99,10 +106,14 @@ export function AlertDialog({
                 type="button"
                 variant={variant === "destructive" ? "destructive" : "default"}
                 onClick={() => {
-                  if (returnFocusRef) {
+                  if (actionReturnFocusRef?.current) {
+                    if (returnFocusRef) {
+                      returnFocusRef.current = actionReturnFocusRef.current;
+                    }
+                  } else if (returnFocusRef) {
                     returnFocusRef.current = null;
                   }
-                  onAction();
+                  onAction?.();
                   onClose();
                 }}
               >
