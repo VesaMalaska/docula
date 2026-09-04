@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { SidebarNode } from "@/lib/types";
 import { ChevronRight, ChevronDown, FileText, Loader2, Home, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
-import { useEffect } from "react";
 
 interface MoveDocumentDialogProps {
   isOpen: boolean;
@@ -18,9 +17,23 @@ interface MoveDocumentDialogProps {
   documentId: string;
   currentParentId: string | null;
   documentTitle?: string;
+  /** Ref to the element that should receive focus when the dialog closes. */
+  returnFocusRef?: React.MutableRefObject<HTMLElement | null>;
+  containerRef?: React.RefObject<HTMLElement | null>;
+  onSuccess?: (destinationParentId: string | null) => void;
 }
 
-export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, currentParentId, documentTitle }: MoveDocumentDialogProps) {
+export function MoveDocumentDialog({
+  isOpen,
+  onClose,
+  spaceId,
+  documentId,
+  currentParentId,
+  documentTitle,
+  returnFocusRef,
+  containerRef,
+  onSuccess,
+}: MoveDocumentDialogProps) {
   const { data: tree, isLoading } = useQuery({
     queryKey: ["sidebar-tree", spaceId],
     queryFn: () => getSidebarTree(spaceId),
@@ -29,6 +42,40 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
 
   const [selectedParentId, setSelectedParentId] = useState<string | null | undefined>(undefined);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const isPointerInteractionRef = useRef(false);
+  const isMoveSuccessfulRef = useRef(false);
+
+  const handleCloseAutoFocus = (event: Event) => {
+    if (isMoveSuccessfulRef.current) {
+      isMoveSuccessfulRef.current = false;
+      if (returnFocusRef) {
+        returnFocusRef.current = null;
+      }
+      event.preventDefault();
+      const interimTarget = containerRef?.current;
+      if (interimTarget && interimTarget.isConnected) {
+        interimTarget.focus({ preventScroll: true });
+      }
+      return;
+    }
+
+    const target = returnFocusRef?.current;
+    const isPointer = isPointerInteractionRef.current;
+    isPointerInteractionRef.current = false;
+
+    if (returnFocusRef) {
+      returnFocusRef.current = null;
+    }
+
+    if (target?.isConnected) {
+      event.preventDefault();
+      if (isPointer) {
+        target.focus({ focusVisible: false } as FocusOptions);
+      } else {
+        target.focus();
+      }
+    }
+  };
   
   // Auto-expand ancestry on load
   useEffect(() => {
@@ -50,6 +97,7 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
       };
       
       findPath(tree, currentParentId, []);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpandedNodes(pathsToExpand);
     }
   }, [isOpen, tree, currentParentId]);
@@ -72,9 +120,14 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
       await moveDocument(documentId, selectedParentId);
     },
     onSuccess: () => {
+      isMoveSuccessfulRef.current = true;
+      if (returnFocusRef) {
+        returnFocusRef.current = null;
+      }
       toast({ title: "Document moved successfully" });
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
       queryClient.invalidateQueries({ queryKey: ["doc", documentId] });
+      onSuccess?.(selectedParentId ?? null);
       onClose();
     },
     onError: (err: Error) => {
@@ -133,7 +186,19 @@ export function MoveDocumentDialog({ isOpen, onClose, spaceId, documentId, curre
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onCloseAutoFocus={handleCloseAutoFocus}
+        onPointerDown={() => {
+          isPointerInteractionRef.current = true;
+        }}
+        onPointerDownOutside={() => {
+          isPointerInteractionRef.current = true;
+        }}
+        onKeyDown={() => {
+          isPointerInteractionRef.current = false;
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Move document</DialogTitle>
           <DialogDescription>

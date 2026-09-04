@@ -31,7 +31,7 @@ interface ImportMarkdownDialogProps {
   isSpaceRoot?: boolean;
   onSuccess?: (newDocId: string) => void;
   /** Ref to the element that should receive focus when the dialog closes. */
-  returnFocusRef?: React.MutableRefObject<HTMLButtonElement | null>;
+  returnFocusRef?: React.MutableRefObject<HTMLElement | null>;
 }
 
 export function ImportMarkdownDialog({
@@ -134,8 +134,12 @@ export function ImportMarkdownDialog({
     ? `Import a Markdown document into "${destinationName || "Space"}".`
     : `Import a Markdown document under "${destinationName || "Document"}".`;
 
+  const isPointerInteractionRef = useRef(false);
+
   const handleCloseAutoFocus = (event: Event) => {
     const target = returnFocusRef?.current;
+    const isPointer = isPointerInteractionRef.current;
+    isPointerInteractionRef.current = false;
 
     if (returnFocusRef) {
       returnFocusRef.current = null;
@@ -143,7 +147,11 @@ export function ImportMarkdownDialog({
 
     if (target?.isConnected) {
       event.preventDefault();
-      target.focus();
+      if (isPointer) {
+        target.focus({ focusVisible: false } as FocusOptions);
+      } else {
+        target.focus();
+      }
     }
     // Without a custom target, allow Radix to restore focus to its own
     // DialogTrigger when one exists.
@@ -154,6 +162,15 @@ export function ImportMarkdownDialog({
       <DialogContent
         className="sm:max-w-[480px]"
         onCloseAutoFocus={handleCloseAutoFocus}
+        onPointerDown={() => {
+          isPointerInteractionRef.current = true;
+        }}
+        onPointerDownOutside={() => {
+          isPointerInteractionRef.current = true;
+        }}
+        onKeyDown={() => {
+          isPointerInteractionRef.current = false;
+        }}
       >
         <DialogHeader>
           <DialogTitle>Import Markdown</DialogTitle>

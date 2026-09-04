@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
 import { useState, useRef } from "react";
+import { calculateListFallback } from "@/lib/focus-fallback";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
     DropdownMenu,
@@ -118,9 +119,12 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [spaceToImport, setSpaceToImport] = useState<Space | null>(null);
   const pendingDialogAction = useRef<{ action: "rename" | "import" | "delete"; space: Space } | null>(null);
   const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const spaceLinkRefs = useRef<Map<string, HTMLAnchorElement>>(new Map());
+  const addSpaceButtonRef = useRef<HTMLButtonElement | null>(null);
   const renameReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const importReturnFocusRef = useRef<HTMLButtonElement | null>(null);
-  const deleteReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
+  const deleteActionReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -180,6 +184,7 @@ export function Sidebar({ onClose }: SidebarProps) {
              <Dialog open={isCreateSpaceOpen} onOpenChange={setIsCreateSpaceOpen}>
                 <DialogTrigger asChild>
                     <button
+                        ref={addSpaceButtonRef}
                         className="rounded p-1 hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer"
                         title="Add Space"
                     >
@@ -260,7 +265,14 @@ export function Sidebar({ onClose }: SidebarProps) {
                                  "group flex items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                  isSpaceActive ? "bg-accent text-accent-foreground" : "text-muted-foreground"
                              )}>
-                                <Link href={`/space/${space.id}`} className="flex-1 flex items-center gap-2 truncate">
+                                <Link
+                                    ref={(el) => {
+                                        if (el) spaceLinkRefs.current.set(space.id, el);
+                                        else spaceLinkRefs.current.delete(space.id);
+                                    }}
+                                    href={`/space/${space.id}`}
+                                    className="flex-1 flex items-center gap-2 truncate"
+                                >
                                     {space.isPublic ? <Globe className="h-4 w-4"/> : <Lock className="h-4 w-4"/>}
                                     <span className="truncate">{space.name}</span>
                                 </Link>
@@ -312,6 +324,18 @@ export function Sidebar({ onClose }: SidebarProps) {
                                                              }
                                                          }
 
+                                                         if (action === "delete") {
+                                                             const fallbackResult = calculateListFallback(spaces || [], targetSpace.id);
+                                                             let fallbackEl: HTMLElement | null = null;
+                                                             if (fallbackResult.type === "item") {
+                                                                 fallbackEl = spaceLinkRefs.current.get(fallbackResult.id) || triggerRefs.current.get(fallbackResult.id) || null;
+                                                             }
+                                                             if (!fallbackEl || !fallbackEl.isConnected) {
+                                                                 fallbackEl = addSpaceButtonRef.current;
+                                                             }
+                                                             deleteActionReturnFocusRef.current = fallbackEl;
+                                                         }
+
                                                          if (action === "rename") setSpaceToRename(targetSpace);
                                                          else if (action === "import") setSpaceToImport(targetSpace);
                                                          else if (action === "delete") setSpaceToDelete(targetSpace.id);
@@ -358,7 +382,14 @@ export function Sidebar({ onClose }: SidebarProps) {
                              {/* Only show tree if space is active */}
                              {isSpaceActive && (
                                  <div className="pl-2 border-l border-border/50 ml-2">
-                                     <SidebarTree spaceId={space.id} />
+                                     <SidebarTree
+                                         spaceId={space.id}
+                                         spaceControlRef={{
+                                             get current() {
+                                                 return spaceLinkRefs.current.get(space.id) || triggerRefs.current.get(space.id) || addSpaceButtonRef.current;
+                                             }
+                                         }}
+                                     />
                                  </div>
                              )}
                         </div>
@@ -397,6 +428,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 variant="destructive"
                 actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
                 returnFocusRef={deleteReturnFocusRef}
+                actionReturnFocusRef={deleteActionReturnFocusRef}
             />
         )}
 
