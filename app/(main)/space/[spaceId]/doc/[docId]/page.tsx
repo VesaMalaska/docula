@@ -60,7 +60,7 @@ function BacklinksList({
 
   if (!tree)
     return (
-      <div className="text-gray-400 dark:text-zinc-500 text-xs">
+      <div className="text-muted-foreground text-xs">
         Loading links...
       </div>
     );
@@ -73,7 +73,7 @@ function BacklinksList({
           <Link
             key={id}
             href={`/space/${spaceId}/doc/${id}`}
-            className="bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-xs hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 transition-colors cursor-pointer"
+            className="bg-secondary px-2 py-1 rounded text-xs hover:bg-secondary/80 text-secondary-foreground transition-colors cursor-pointer"
           >
             {title}
           </Link>
@@ -343,7 +343,7 @@ export default function DocPage() {
   if (isLoading) return <DocSkeleton />;
   if (!doc)
     return (
-      <div className="p-8 text-gray-500 dark:text-zinc-400">
+      <div className="p-8 text-muted-foreground">
         Document not found
       </div>
     );
@@ -367,7 +367,7 @@ export default function DocPage() {
             <div className="flex">
               <div className="shrink-0">
                 <AlertCircle
-                  className="h-5 w-5 text-amber-400 dark:text-amber-500"
+                  className="h-5 w-5 text-amber-600 dark:text-amber-500"
                   aria-hidden="true"
                 />
               </div>
@@ -402,7 +402,7 @@ export default function DocPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className={cn(
-                "font-bold text-gray-900 dark:text-zinc-100 bg-transparent focus:outline-none w-full mr-4 placeholder-gray-400 dark:placeholder-zinc-600 transition-all duration-200",
+                "font-bold text-foreground bg-transparent focus:outline-none w-full mr-4 placeholder:text-muted-foreground transition-all duration-200",
                 isScrolled ? "text-xl" : "text-3xl",
               )}
               placeholder="Untitled"
@@ -410,7 +410,7 @@ export default function DocPage() {
           ) : (
             <h1
               className={cn(
-                "font-bold text-gray-900 dark:text-zinc-100 transition-all duration-200 transform origin-left",
+                "font-bold text-foreground transition-all duration-200 transform origin-left",
                 isScrolled ? "text-xl" : "text-3xl",
               )}
             >
@@ -428,7 +428,7 @@ export default function DocPage() {
               <>
                 <button
                   onClick={handleCancel}
-                  className="px-3 py-1 text-sm text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                  className="px-3 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -451,7 +451,7 @@ export default function DocPage() {
                   <DropdownMenuTrigger asChild>
                     <button 
                       type="button"
-                      className="flex items-center justify-center h-7 w-7 rounded border dark:border-zinc-700 dark:text-zinc-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex items-center justify-center h-7 w-7 rounded border border-border text-foreground hover:bg-accent hover:text-accent-foreground text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       title="Document actions"
                       aria-label="Document actions"
                     >
@@ -486,7 +486,7 @@ export default function DocPage() {
                 <button
                   onClick={handleEdit}
                   disabled={!!isLockedByOther}
-                  className="flex items-center gap-1 rounded border dark:border-zinc-700 dark:text-zinc-300 px-3 py-1 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  className="flex items-center gap-1 rounded border border-border text-foreground px-3 py-1 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   <Edit2 className="h-4 w-4" />
                   {isLockedByOther ? "Locked" : "Edit"}
@@ -510,7 +510,7 @@ export default function DocPage() {
       </div>
 
       <div className="mx-auto max-w-4xl px-4 md:px-8">
-        <div className="mt-10 border-t dark:border-zinc-800 pt-4 text-sm text-gray-400 dark:text-zinc-500">
+        <div className="mt-10 border-t border-border pt-4 text-sm text-muted-foreground">
           <p>
             Last updated:{" "}
             {doc.updatedAt?.toDate
@@ -518,7 +518,7 @@ export default function DocPage() {
               : "Just now"}
           </p>
           <div className="mt-2">
-            <span className="font-semibold text-gray-900 dark:text-zinc-200">
+            <span className="font-semibold text-foreground">
               Linked to by:
             </span>
             {doc.backlinks?.length > 0 ? (

@@ -129,7 +129,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   >
     {children}
     <DropdownMenuPrimitive.ItemIndicator>
-      <Check className="h-3.5 w-3.5 shrink-0 opacity-80" />
+      <Check className="h-3.5 w-3.5 shrink-0" />
     </DropdownMenuPrimitive.ItemIndicator>
   </DropdownMenuPrimitive.RadioItem>
 ))
@@ -159,7 +159,7 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-muted", className)}
+    className={cn("-mx-1 my-1 h-px bg-border", className)}
     {...props}
   />
 ))

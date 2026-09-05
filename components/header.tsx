@@ -26,7 +26,7 @@ export function Header({
           aria-label="Open sidebar"
           aria-expanded={isSidebarOpen}
           onClick={onMenuClick}
-          className="p-2 -ml-2 text-muted-foreground hover:text-foreground lg:hidden cursor-pointer"
+          className="p-2 -ml-2 text-muted-foreground hover:text-foreground lg:hidden cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Menu className="h-6 w-6" />
         </button>

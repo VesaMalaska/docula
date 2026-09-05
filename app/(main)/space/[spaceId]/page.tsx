@@ -73,14 +73,14 @@ export default function SpacePage() {
 
   return (
     <div className="mx-auto max-w-4xl p-8">
-      <div className="flex items-start justify-between mb-8 border-b pb-6 dark:border-zinc-800">
+      <div className="flex items-start justify-between mb-8 border-b pb-6 border-border">
         <div>
           <h1 className="text-4xl font-bold mb-2">{space.name}</h1>
           <p className="text-muted-foreground text-lg">
             {space.description || "No description provided."}
           </p>
-          <div className="flex items-center gap-2 mt-4 text-sm text-gray-500">
-            <span className="flex items-center gap-1 bg-secondary px-2 py-1 rounded">
+          <div className="flex items-center gap-2 mt-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1 bg-secondary text-secondary-foreground px-2 py-1 rounded">
               {space.isPublic ? "Public Space" : "Private Space"}
             </span>
             <span>•</span>
