@@ -383,11 +383,11 @@ export function MoveDocumentDialog({
           aria-selected={isSelected}
           aria-disabled={isDisabled ? true : undefined}
           tabIndex={activeId === node.id ? 0 : -1}
-          className="outline-none focus:outline-none focus-visible:outline-none [&:focus-visible>div:first-child]:ring-2 [&:focus-visible>div:first-child]:ring-ring [&:focus-visible>div:first-child]:outline-none"
+          className="min-w-0 outline-none focus:outline-none focus-visible:outline-none [&:focus-visible>div:first-child]:ring-2 [&:focus-visible>div:first-child]:ring-ring [&:focus-visible>div:first-child]:outline-none"
         >
           <div
             className={cn(
-              "flex items-center gap-1 rounded py-1.5 px-2 text-sm transition-colors",
+              "flex items-center gap-1 rounded py-1.5 px-2 text-sm transition-colors min-w-0 w-full",
               isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent",
               isSelected ? "bg-accent font-medium" : ""
             )}
@@ -416,17 +416,21 @@ export function MoveDocumentDialog({
               {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </span>
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{node.title}</span>
+            <span className="truncate min-w-0" title={node.title}>{node.title}</span>
             {node.id === currentParentId && (
-              <span className="text-xs text-muted-foreground ml-2 shrink-0">(Current)</span>
+              <span className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 max-w-[40%] truncate" title="(Current)">
+                (Current)
+              </span>
             )}
             {isDisabled && node.id !== currentParentId && badgeText && (
-              <span className="text-xs text-muted-foreground ml-2 shrink-0">({badgeText})</span>
+              <span className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 max-w-[50%] truncate" title={`(${badgeText})`}>
+                ({badgeText})
+              </span>
             )}
             {isSelected && <Check className="h-3.5 w-3.5 text-primary ml-auto shrink-0" />}
           </div>
           {isOpen && hasChildren && (
-            <div role="group">
+            <div role="group" className="min-w-0 w-full">
               {renderTree(node.children, level + 1)}
             </div>
           )}
@@ -438,7 +442,7 @@ export function MoveDocumentDialog({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="sm:max-w-[500px]"
+        className="p-4 sm:p-6 sm:max-w-[500px] min-w-0"
         onCloseAutoFocus={handleCloseAutoFocus}
         onPointerDown={() => {
           isPointerInteractionRef.current = true;
@@ -450,14 +454,14 @@ export function MoveDocumentDialog({
           isPointerInteractionRef.current = false;
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="min-w-0">
           <DialogTitle>Move document</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="min-w-0 [overflow-wrap:anywhere] break-words">
             Select a new location{documentTitle ? ` for "${documentTitle}"` : " for this document"}.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
+        <div className="py-4 min-w-0 w-full">
           {isLoading ? (
             <div className="flex justify-center p-4"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : (
@@ -465,7 +469,7 @@ export function MoveDocumentDialog({
               ref={treeContainerRef}
               role="tree"
               aria-label="Move destinations"
-              className="border rounded-md max-h-[300px] overflow-y-auto p-1 focus:outline-none"
+              className="border rounded-md max-h-[300px] overflow-y-auto overflow-x-hidden p-1 focus:outline-none min-w-0 w-full"
               onKeyDown={handleTreeKeyDown}
             >
               <div
@@ -479,7 +483,7 @@ export function MoveDocumentDialog({
                 aria-disabled={isSpaceRootDisabled ? true : undefined}
                 tabIndex={activeId === SPACE_ROOT_ID ? 0 : -1}
                 className={cn(
-                  "flex items-center gap-2 rounded py-1.5 px-2 text-sm transition-colors",
+                  "flex items-center gap-2 rounded py-1.5 px-2 text-sm transition-colors min-w-0 w-full",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isSpaceRootDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-accent",
                   isSpaceRootSelected ? "bg-accent font-medium" : ""
@@ -493,12 +497,17 @@ export function MoveDocumentDialog({
                 }}
               >
                 <Home className="h-4 w-4 text-muted-foreground ml-1 shrink-0" />
-                <span>Space root</span>
+                <span className="truncate min-w-0">Space root</span>
                 {currentParentId === null && (
-                  <span className="text-xs text-muted-foreground ml-2 shrink-0">(Current)</span>
+                  <span className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 truncate" title="(Current)">
+                    (Current)
+                  </span>
                 )}
                 {isSpaceRootDisabled && currentParentId !== null && (
-                  <span className="text-xs text-muted-foreground ml-2 shrink-0">
+                  <span
+                    className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 max-w-[50%] truncate"
+                    title={`(${getDisabledBadgeText(spaceRootValidity.reason)})`}
+                  >
                     ({getDisabledBadgeText(spaceRootValidity.reason)})
                   </span>
                 )}
@@ -512,7 +521,7 @@ export function MoveDocumentDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="min-w-0">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button 
             onClick={() => handleMove()} 
