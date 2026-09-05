@@ -99,10 +99,11 @@ function PublicSpaceList({ onClose }: { onClose: () => void }) {
 
 
 interface SidebarProps {
-  onClose?: () => void;
+  onClose?: (options?: { returnFocus?: boolean }) => void;
+  closeButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
-export function Sidebar({ onClose }: SidebarProps) {
+export function Sidebar({ onClose, closeButtonRef }: SidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
   const params = useParams();
@@ -172,7 +173,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     onSuccess: (newDocId) => {
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
       router.push(`/space/${spaceId}/doc/${newDocId}?edit=true`);
-      onClose?.();
+      onClose?.({ returnFocus: false });
     },
   });
 
@@ -238,7 +239,9 @@ export function Sidebar({ onClose }: SidebarProps) {
             </Dialog>
 
             <button
-                onClick={onClose}
+                ref={closeButtonRef}
+                onClick={() => onClose?.({ returnFocus: true })}
+                aria-label="Close sidebar"
                 className="p-1 lg:hidden text-muted-foreground hover:text-foreground cursor-pointer"
             >
                 <X className="h-5 w-5" />
@@ -248,7 +251,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       <div className="flex-1 overflow-y-auto py-4" onClick={(e) => {
           if ((e.target as HTMLElement).closest('a')) {
-              onClose?.();
+              onClose?.({ returnFocus: false });
           }
       }}>
         {isLoadingSpaces ? (
@@ -410,7 +413,7 @@ export function Sidebar({ onClose }: SidebarProps) {
              <Link 
                 href="/trash"
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer translation-colors"
-                onClick={onClose}
+                onClick={() => onClose?.({ returnFocus: false })}
              >
                 <Trash2 className="h-4 w-4" />
                 Trashbin
@@ -453,7 +456,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 parentId={null}
                 destinationName={spaceToImport.name}
                 isSpaceRoot={true}
-                onSuccess={() => onClose?.()}
+                onSuccess={() => onClose?.({ returnFocus: false })}
                 returnFocusRef={importReturnFocusRef}
             />
         )}
