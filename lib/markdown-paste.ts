@@ -24,6 +24,108 @@ declare module "@tiptap/core" {
  */
 const parserCache = new WeakMap<Schema, MarkdownParser>();
 
+interface MarkdownItToken {
+  type: string;
+  tag: string;
+  nesting: number;
+  block?: boolean;
+  content?: string;
+  children?: MarkdownItToken[] | null;
+  attrs?: [string, string][] | null;
+}
+
+interface MarkdownItStateCore {
+  tokens: MarkdownItToken[];
+  Token: new (type: string, tag: string, nesting: number) => MarkdownItToken;
+}
+
+const TOKENIZER_CONFIGURED = Symbol.for(
+  "docula.markdownPaste.tokenizerConfigured"
+);
+
+interface MarkdownItTokenizer {
+  [TOKENIZER_CONFIGURED]?: boolean;
+  enable?: (rules: string[]) => void;
+  core?: {
+    ruler?: {
+      __find__?: (name: string) => number;
+      at?: (
+        name: string,
+        fn: (state: MarkdownItStateCore) => void
+      ) => void;
+      after?: (
+        afterName: string,
+        ruleName: string,
+        fn: (state: MarkdownItStateCore) => void
+      ) => void;
+    };
+  };
+}
+
+function configureTokenizer(tokenizer: MarkdownItTokenizer): void {
+  if (tokenizer[TOKENIZER_CONFIGURED]) return;
+
+  if (typeof tokenizer.enable === "function") {
+    tokenizer.enable(["table", "strikethrough"]);
+  }
+
+  if (tokenizer.core?.ruler) {
+    const tableCellParagraphsRule = (state: MarkdownItStateCore) => {
+      const newTokens: MarkdownItToken[] = [];
+      for (let i = 0; i < state.tokens.length; i++) {
+        const token = state.tokens[i];
+        if (token.type === "th_open" || token.type === "td_open") {
+          newTokens.push(token);
+          // If cell content is already wrapped in a paragraph, avoid re-wrapping
+          if (
+            i + 1 < state.tokens.length &&
+            state.tokens[i + 1].type === "paragraph_open"
+          ) {
+            continue;
+          }
+          if (i + 1 < state.tokens.length && state.tokens[i + 1].type === "inline") {
+            const pOpen = new state.Token("paragraph_open", "p", 1);
+            pOpen.block = true;
+            newTokens.push(pOpen);
+            newTokens.push(state.tokens[++i]);
+            const pClose = new state.Token("paragraph_close", "p", -1);
+            pClose.block = true;
+            newTokens.push(pClose);
+          } else {
+            const pOpen = new state.Token("paragraph_open", "p", 1);
+            pOpen.block = true;
+            const pClose = new state.Token("paragraph_close", "p", -1);
+            pClose.block = true;
+            newTokens.push(pOpen);
+            newTokens.push(pClose);
+          }
+        } else {
+          newTokens.push(token);
+        }
+      }
+      state.tokens = newTokens;
+    };
+
+    const existingRuleIdx = tokenizer.core.ruler.__find__
+      ? tokenizer.core.ruler.__find__("table_cell_paragraphs")
+      : -1;
+
+    if (existingRuleIdx !== -1) {
+      if (typeof tokenizer.core.ruler.at === "function") {
+        tokenizer.core.ruler.at("table_cell_paragraphs", tableCellParagraphsRule);
+      }
+    } else if (typeof tokenizer.core.ruler.after === "function") {
+      tokenizer.core.ruler.after(
+        "inline",
+        "table_cell_paragraphs",
+        tableCellParagraphsRule
+      );
+    }
+  }
+
+  tokenizer[TOKENIZER_CONFIGURED] = true;
+}
+
 /**
  * Creates or retrieves a configured MarkdownParser for the given ProseMirror Schema.
  */
@@ -33,12 +135,13 @@ export function getOrCreateMarkdownParser(schema: Schema): MarkdownParser {
     return parser;
   }
 
-  const tokenizer = defaultMarkdownParser.tokenizer;
-  if (typeof tokenizer.enable === "function") {
-    tokenizer.enable(["strikethrough"]);
-  }
+  const tokenizer = defaultMarkdownParser.tokenizer as unknown as MarkdownItTokenizer;
+  configureTokenizer(tokenizer);
 
-  parser = new MarkdownParser(schema, tokenizer, {
+  const hasTable = Boolean(schema.nodes.table && schema.nodes.tableRow && schema.nodes.tableCell);
+  const hasTableHeader = Boolean(schema.nodes.tableHeader);
+
+  parser = new MarkdownParser(schema, defaultMarkdownParser.tokenizer, {
     blockquote: { block: "blockquote" },
     paragraph: { block: "paragraph" },
     list_item: { block: "listItem" },
@@ -79,12 +182,12 @@ export function getOrCreateMarkdownParser(schema: Schema): MarkdownParser {
     image: { ignore: true, noCloseToken: true },
     html_block: { ignore: true, noCloseToken: true },
     html_inline: { ignore: true, noCloseToken: true },
-    table: { ignore: true },
+    table: hasTable ? { block: "table" } : { ignore: true },
     thead: { ignore: true },
     tbody: { ignore: true },
-    tr: { ignore: true },
-    th: { ignore: true },
-    td: { ignore: true },
+    tr: hasTable ? { block: "tableRow" } : { ignore: true },
+    th: hasTable ? { block: hasTableHeader ? "tableHeader" : "tableCell" } : { ignore: true },
+    td: hasTable ? { block: "tableCell" } : { ignore: true },
   });
 
   parserCache.set(schema, parser);
@@ -265,9 +368,13 @@ export function looksLikeMarkdown(text: string): boolean {
   }
 
   // 8. Markdown Tables: lines with | col | col | and |---|---|
-  const tableDelimiterRegex = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?$/;
-  const tableRowRegex = /^\|(.+\|)+$/;
-  const hasTableDelimiter = lines.some((l) => tableDelimiterRegex.test(l.trim()));
+  const tableDelimiterRegex =
+    /^(?:\|(?:\s*:?-+:?\s*\|)+|\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+)$/;
+  const tableRowRegex = /^\|?.+\|.*$/;
+  const hasTableDelimiter = lines.some((l, idx) => {
+    if (!tableDelimiterRegex.test(l.trim())) return false;
+    return idx > 0 && tableRowRegex.test(lines[idx - 1].trim());
+  });
   const tableRows = lines.filter((l) => tableRowRegex.test(l.trim()));
   if (hasTableDelimiter && tableRows.length >= 2) {
     score += 4;

@@ -4,6 +4,7 @@ import { getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
+import { getEditorSchema, coreEditorExtensions } from "../editor-schema.ts";
 import {
   looksLikeMarkdown,
   getOrCreateMarkdownParser,
@@ -21,6 +22,8 @@ const testSchema = getSchema([
     autolink: true,
   }),
 ]);
+
+const editorSchema = getEditorSchema();
 
 describe("looksLikeMarkdown heuristic detection", () => {
   it("rejects plain text example 1: Call #123 for details.", () => {
@@ -143,6 +146,55 @@ const wolf = "hopping";
 > Important`;
 
     assert.strictEqual(looksLikeMarkdown(strongInput), true);
+  });
+
+  it("detects standard GFM table with outer pipes", () => {
+    const tableInput = `| Name | Role |
+| --- | --- |
+| Martta | Farmer |
+| Pena | Tractor philosopher |`;
+    assert.strictEqual(looksLikeMarkdown(tableInput), true);
+  });
+
+  it("detects GFM table with alignment markers", () => {
+    const tableInput = `| Left | Center | Right |
+| :--- | :---: | ---: |
+| A | B | C |`;
+    assert.strictEqual(looksLikeMarkdown(tableInput), true);
+  });
+
+  it("detects GFM table with optional outer pipes", () => {
+    const tableInput = `Name | Role
+--- | ---
+Martta | Farmer
+Pena | Tractor philosopher`;
+    assert.strictEqual(looksLikeMarkdown(tableInput), true);
+  });
+
+  it("detects GFM table with empty cells", () => {
+    const tableInput = `| Name | Note |
+| --- | --- |
+| Martta | |
+| | Missing name |`;
+    assert.strictEqual(looksLikeMarkdown(tableInput), true);
+  });
+
+  it("rejects non-table pipe text in ordinary prose", () => {
+    assert.strictEqual(
+      looksLikeMarkdown("This is a pipe | in normal text.\nAnother line without delimiter."),
+      false
+    );
+  });
+
+  it("rejects table-like text without delimiter row", () => {
+    assert.strictEqual(
+      looksLikeMarkdown("| Name | Role |\n| Martta | Farmer |"),
+      false
+    );
+  });
+
+  it("rejects delimiter row without preceded header row", () => {
+    assert.strictEqual(looksLikeMarkdown("--- | ---"), false);
   });
 });
 
@@ -438,5 +490,408 @@ Third line.`;
       if (n.type.name === "hardBreak") hasHardBreak = true;
     });
     assert.ok(hasHardBreak, "Should contain hardBreak node");
+  });
+});
+
+describe("GFM table parsing and editor conversion", () => {
+  it("converts standard GFM table into native table structure with header and body cells", () => {
+    const tableMd = `| Name | Role |
+| --- | --- |
+| Martta | Farmer |
+| Pena | Tractor philosopher |`;
+
+    const doc = parseMarkdown(editorSchema, tableMd);
+    assert.ok(doc, "doc should not be null");
+    assert.strictEqual(doc.childCount, 1);
+
+    const table = doc.child(0);
+    assert.strictEqual(table.type.name, "table");
+    assert.strictEqual(table.childCount, 3, "should have 3 rows (1 header + 2 body)");
+
+    // Header row
+    const headerRow = table.child(0);
+    assert.strictEqual(headerRow.type.name, "tableRow");
+    assert.strictEqual(headerRow.childCount, 2);
+    assert.strictEqual(headerRow.child(0).type.name, "tableHeader");
+    assert.strictEqual(headerRow.child(0).textContent, "Name");
+    assert.strictEqual(headerRow.child(1).type.name, "tableHeader");
+    assert.strictEqual(headerRow.child(1).textContent, "Role");
+
+    // Body row 1
+    const bodyRow1 = table.child(1);
+    assert.strictEqual(bodyRow1.type.name, "tableRow");
+    assert.strictEqual(bodyRow1.childCount, 2);
+    assert.strictEqual(bodyRow1.child(0).type.name, "tableCell");
+    assert.strictEqual(bodyRow1.child(0).textContent, "Martta");
+    assert.strictEqual(bodyRow1.child(1).type.name, "tableCell");
+    assert.strictEqual(bodyRow1.child(1).textContent, "Farmer");
+
+    // Body row 2
+    const bodyRow2 = table.child(2);
+    assert.strictEqual(bodyRow2.type.name, "tableRow");
+    assert.strictEqual(bodyRow2.childCount, 2);
+    assert.strictEqual(bodyRow2.child(0).type.name, "tableCell");
+    assert.strictEqual(bodyRow2.child(0).textContent, "Pena");
+    assert.strictEqual(bodyRow2.child(1).type.name, "tableCell");
+    assert.strictEqual(bodyRow2.child(1).textContent, "Tractor philosopher");
+
+    // Verify raw table delimiters do not appear anywhere in the document
+    const rawDelimiters = ["|", "---"];
+    doc.descendants((node) => {
+      if (node.isText && node.text) {
+        for (const delim of rawDelimiters) {
+          assert.strictEqual(
+            node.text.includes(delim),
+            false,
+            `Text node should not contain delimiter '${delim}': got '${node.text}'`
+          );
+        }
+      }
+    });
+  });
+
+  it("handles alignment markers without leaking colons into cell content", () => {
+    const tableMd = `| Left | Center | Right |
+| :--- | :---: | ---: |
+| A | B | C |`;
+
+    const doc = parseMarkdown(editorSchema, tableMd);
+    assert.ok(doc);
+    assert.strictEqual(doc.childCount, 1);
+
+    const table = doc.child(0);
+    assert.strictEqual(table.type.name, "table");
+    assert.strictEqual(table.childCount, 2);
+
+    const headerRow = table.child(0);
+    assert.strictEqual(headerRow.child(0).textContent, "Left");
+    assert.strictEqual(headerRow.child(1).textContent, "Center");
+    assert.strictEqual(headerRow.child(2).textContent, "Right");
+
+    const bodyRow = table.child(1);
+    assert.strictEqual(bodyRow.child(0).textContent, "A");
+    assert.strictEqual(bodyRow.child(1).textContent, "B");
+    assert.strictEqual(bodyRow.child(2).textContent, "C");
+
+    // Verify alignment markers :---, :---:, ---: do not leak as text
+    doc.descendants((node) => {
+      if (node.isText && node.text) {
+        assert.strictEqual(node.text.includes(":---"), false);
+        assert.strictEqual(node.text.includes("---:"), false);
+      }
+    });
+  });
+
+  it("converts table syntax with optional outer pipes", () => {
+    const tableMd = `Name | Role
+--- | ---
+Martta | Farmer
+Pena | Tractor philosopher`;
+
+    const doc = parseMarkdown(editorSchema, tableMd);
+    assert.ok(doc);
+    assert.strictEqual(doc.childCount, 1);
+
+    const table = doc.child(0);
+    assert.strictEqual(table.type.name, "table");
+    assert.strictEqual(table.childCount, 3);
+
+    const headerRow = table.child(0);
+    assert.strictEqual(headerRow.child(0).type.name, "tableHeader");
+    assert.strictEqual(headerRow.child(0).textContent, "Name");
+    assert.strictEqual(headerRow.child(1).type.name, "tableHeader");
+    assert.strictEqual(headerRow.child(1).textContent, "Role");
+
+    const bodyRow1 = table.child(1);
+    assert.strictEqual(bodyRow1.child(0).textContent, "Martta");
+    assert.strictEqual(bodyRow1.child(1).textContent, "Farmer");
+
+    const bodyRow2 = table.child(2);
+    assert.strictEqual(bodyRow2.child(0).textContent, "Pena");
+    assert.strictEqual(bodyRow2.child(1).textContent, "Tractor philosopher");
+  });
+
+  it("preserves empty cells and column alignment without shifting cell contents", () => {
+    const tableMd = `| Name | Note |
+| --- | --- |
+| Martta | |
+| | Missing name |`;
+
+    const doc = parseMarkdown(editorSchema, tableMd);
+    assert.ok(doc);
+
+    const table = doc.child(0);
+    assert.strictEqual(table.type.name, "table");
+    assert.strictEqual(table.childCount, 3);
+
+    // Row 1: Martta in col 0, empty in col 1
+    const row1 = table.child(1);
+    assert.strictEqual(row1.childCount, 2);
+    assert.strictEqual(row1.child(0).textContent, "Martta");
+    assert.strictEqual(row1.child(1).textContent, "");
+    assert.strictEqual(row1.child(1).child(0).type.name, "paragraph");
+
+    // Row 2: empty in col 0, 'Missing name' in col 1
+    const row2 = table.child(2);
+    assert.strictEqual(row2.childCount, 2);
+    assert.strictEqual(row2.child(0).textContent, "");
+    assert.strictEqual(row2.child(0).child(0).type.name, "paragraph");
+    assert.strictEqual(row2.child(1).textContent, "Missing name");
+  });
+
+  it("preserves surrounding Markdown paragraphs in exact sequence with the table", () => {
+    const md = `Paragraph before the table.
+
+| Name | Role |
+| --- | --- |
+| Martta | Farmer |
+
+Paragraph after the table.`;
+
+    const doc = parseMarkdown(editorSchema, md);
+    assert.ok(doc);
+    assert.strictEqual(doc.childCount, 3);
+
+    assert.strictEqual(doc.child(0).type.name, "paragraph");
+    assert.strictEqual(doc.child(0).textContent, "Paragraph before the table.");
+
+    assert.strictEqual(doc.child(1).type.name, "table");
+    assert.strictEqual(doc.child(1).childCount, 2);
+    assert.strictEqual(doc.child(1).child(0).child(0).textContent, "Name");
+    assert.strictEqual(doc.child(1).child(1).child(0).textContent, "Martta");
+
+    assert.strictEqual(doc.child(2).type.name, "paragraph");
+    assert.strictEqual(doc.child(2).textContent, "Paragraph after the table.");
+  });
+
+  it("does not convert ordinary prose containing pipe characters into a table", () => {
+    const prose = "This is a pipe | in normal text.\nAnother line without delimiter.";
+    const doc = parseMarkdown(editorSchema, prose);
+    assert.ok(doc);
+    assert.strictEqual(doc.childCount, 1);
+    assert.strictEqual(doc.child(0).type.name, "paragraph");
+    assert.strictEqual(
+      doc.child(0).textContent,
+      "This is a pipe | in normal text. Another line without delimiter."
+    );
+  });
+
+  it("does not convert table-like text lacking a delimiter row into a table", () => {
+    const textWithoutDelimiter = `| Name | Role |
+| Martta | Farmer |
+| Pena | Tractor philosopher |`;
+
+    const doc = parseMarkdown(editorSchema, textWithoutDelimiter);
+    assert.ok(doc);
+    assert.strictEqual(doc.childCount, 1);
+    assert.strictEqual(doc.child(0).type.name, "paragraph");
+    assert.ok(
+      doc.child(0).textContent.includes("Martta"),
+      "Should retain text as ordinary paragraph"
+    );
+  });
+
+  it("inserts table slice cleanly into editor selection between surrounding paragraphs", () => {
+    const initialDoc = editorSchema.node("doc", null, [
+      editorSchema.node("paragraph", null, [editorSchema.text("Before table.")]),
+      editorSchema.node("paragraph", null, [editorSchema.text("After table.")]),
+    ]);
+
+    let state = EditorState.create({ doc: initialDoc, schema: editorSchema });
+    // Place cursor at end of 'Before table.' (pos 14)
+    state = state.apply(
+      state.tr.setSelection(TextSelection.create(state.doc, 14))
+    );
+
+    const tableMd = `| Name | Role |
+| --- | --- |
+| Martta | Farmer |`;
+    const slice = createMarkdownSlice(editorSchema, tableMd);
+    assert.ok(slice);
+
+    const tr = state.tr.replaceSelection(slice);
+    state = state.apply(tr);
+
+    // Structure: Before table. -> table -> After table.
+    assert.strictEqual(state.doc.childCount, 3);
+    assert.strictEqual(state.doc.child(0).textContent, "Before table.");
+    assert.strictEqual(state.doc.child(1).type.name, "table");
+    assert.strictEqual(state.doc.child(1).childCount, 2);
+    assert.strictEqual(state.doc.child(2).textContent, "After table.");
+  });
+
+  it("parses rich inline marks within table cells (bold, italic, link, code, strike)", () => {
+    const richTable = `| Feature | Example |
+| --- | --- |
+| **Bold** | *Italic* |
+| [Link](https://docula.local) | \`inlineCode\` and ~~strike~~ |`;
+
+    const doc = parseMarkdown(editorSchema, richTable);
+    assert.ok(doc);
+
+    const table = doc.child(0);
+    assert.strictEqual(table.type.name, "table");
+
+    const row1 = table.child(1);
+    // Bold in col 0
+    let hasBold = false;
+    row1.child(0).descendants((node) => {
+      if (node.marks.some((m) => m.type.name === "bold")) hasBold = true;
+    });
+    assert.ok(hasBold, "cell should contain bold mark");
+
+    // Italic in col 1
+    let hasItalic = false;
+    row1.child(1).descendants((node) => {
+      if (node.marks.some((m) => m.type.name === "italic")) hasItalic = true;
+    });
+    assert.ok(hasItalic, "cell should contain italic mark");
+
+    const row2 = table.child(2);
+    // Link in col 0
+    let linkHref = "";
+    row2.child(0).descendants((node) => {
+      const lm = node.marks.find((m) => m.type.name === "link");
+      if (lm) linkHref = lm.attrs.href;
+    });
+    assert.strictEqual(linkHref, "https://docula.local");
+
+    // Code & Strike in col 1
+    let hasCode = false;
+    let hasStrike = false;
+    row2.child(1).descendants((node) => {
+      if (node.marks.some((m) => m.type.name === "code")) hasCode = true;
+      if (node.marks.some((m) => m.type.name === "strike")) hasStrike = true;
+    });
+    assert.ok(hasCode, "cell should contain code mark");
+    assert.ok(hasStrike, "cell should contain strike mark");
+  });
+
+  it("preserves all header and cell content in reading order when schema lacks table extensions", () => {
+    const tableMd = `| Name | Role |
+| --- | --- |
+| Martta | Farmer |
+| Pena | Tractor philosopher |`;
+
+    // testSchema does not have table extensions
+    assert.strictEqual(testSchema.nodes.table, undefined);
+
+    const doc = parseMarkdown(testSchema, tableMd);
+    assert.ok(doc, "parsing should succeed without throwing error");
+
+    // Verify no native table node exists anywhere in the document
+    let hasTableNode = false;
+    doc.descendants((node) => {
+      if (
+        node.type.name === "table" ||
+        node.type.name === "tableRow" ||
+        node.type.name === "tableHeader" ||
+        node.type.name === "tableCell"
+      ) {
+        hasTableNode = true;
+      }
+    });
+    assert.strictEqual(hasTableNode, false, "no native table nodes should exist in fallback doc");
+
+    // Verify Name, Role, Martta, Farmer, Pena, and Tractor philosopher all remain present in reading order
+    const expectedValues = [
+      "Name",
+      "Role",
+      "Martta",
+      "Farmer",
+      "Pena",
+      "Tractor philosopher",
+    ];
+
+    const extractedParagraphTexts: string[] = [];
+    doc.forEach((node) => {
+      if (node.type.name === "paragraph" && node.textContent) {
+        extractedParagraphTexts.push(node.textContent);
+      }
+    });
+
+    assert.deepStrictEqual(
+      extractedParagraphTexts,
+      expectedValues,
+      "all header and body cell values must remain in exact reading order"
+    );
+
+    // Verify no value is duplicated
+    const seen = new Set<string>();
+    for (const val of extractedParagraphTexts) {
+      assert.strictEqual(
+        seen.has(val),
+        false,
+        `Value '${val}' must not be duplicated in fallback content`
+      );
+      seen.add(val);
+    }
+  });
+
+  it("idempotently initializes tokenizer across multiple compatible schema instances without duplicate rules or extra paragraphs", () => {
+    const compatibleSchema2 = getSchema(coreEditorExtensions);
+    assert.notStrictEqual(editorSchema, compatibleSchema2);
+
+    // Repeatedly retrieve parsers across both schema instances to exercise the configuration path
+    const p1 = getOrCreateMarkdownParser(editorSchema);
+    const p2 = getOrCreateMarkdownParser(compatibleSchema2);
+    const p3 = getOrCreateMarkdownParser(editorSchema);
+    const p4 = getOrCreateMarkdownParser(compatibleSchema2);
+    assert.ok(p1 && p2 && p3 && p4);
+
+    const tableMd = `| Name | Role |
+| --- | --- |
+| Martta | Farmer |
+| Pena | Tractor philosopher |`;
+
+    const doc = p4.parse(tableMd);
+    assert.ok(doc);
+    assert.strictEqual(doc.childCount, 1, "exactly one root node");
+
+    const table = doc.child(0);
+    assert.strictEqual(table.type.name, "table", "exactly one table produced");
+    assert.strictEqual(table.childCount, 3, "table rows must not be duplicated (1 header + 2 body rows)");
+
+    const expectedCells = [
+      ["Name", "Role"],
+      ["Martta", "Farmer"],
+      ["Pena", "Tractor philosopher"],
+    ];
+
+    for (let rowIndex = 0; rowIndex < table.childCount; rowIndex++) {
+      const row = table.child(rowIndex);
+      assert.strictEqual(row.type.name, "tableRow");
+      assert.strictEqual(
+        row.childCount,
+        expectedCells[rowIndex].length,
+        `row ${rowIndex} cells must not be duplicated`
+      );
+
+      for (let colIndex = 0; colIndex < row.childCount; colIndex++) {
+        const cell = row.child(colIndex);
+        const expectedText = expectedCells[rowIndex][colIndex];
+
+        // Each cell contains exactly one required paragraph node
+        assert.strictEqual(
+          cell.childCount,
+          1,
+          `cell [${rowIndex}, ${colIndex}] must contain exactly one paragraph, got ${cell.childCount}`
+        );
+        const paragraph = cell.child(0);
+        assert.strictEqual(paragraph.type.name, "paragraph");
+
+        // No extra empty paragraph or leaked content; text appears exactly once
+        assert.strictEqual(
+          cell.textContent,
+          expectedText,
+          `cell [${rowIndex}, ${colIndex}] text must appear exactly once`
+        );
+        assert.strictEqual(
+          paragraph.textContent,
+          expectedText,
+          `paragraph in cell [${rowIndex}, ${colIndex}] must match expected text`
+        );
+      }
+    }
   });
 });
