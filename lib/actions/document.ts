@@ -13,12 +13,13 @@ import {
   orderBy,
   where,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  DocumentSnapshot
 } from "firebase/firestore";
 import { Document, SidebarNode } from "@/lib/types";
 import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
-import { calculateNewPath, calculateDescendantPath } from "../utils/hierarchy";
+import { calculateNewPath, calculateDescendantPath, calculateSubtreeHeightFromPaths } from "../utils/hierarchy";
 
 export interface CreateDocumentOptions {
   title?: string;
@@ -170,7 +171,7 @@ export async function updateDocument(id: string, data: Partial<Document>) {
           
           // Pre-fetch all targets to ensure we read everything before any write
           const allTargetIds = [...new Set([...added, ...removed])];
-          const targetSnaps: Record<string, any> = {};
+          const targetSnaps: Record<string, DocumentSnapshot> = {};
           
           for (const targetId of allTargetIds) {
              const targetRef = doc(db, "documents", targetId);
@@ -441,6 +442,7 @@ export async function moveDocument(id: string, newParentId: string | null) {
   }
 
   let newPath: string[] = [];
+  let destinationDepth = 0;
   
   if (newParentId) {
     const parentRef = doc(db, "documents", newParentId);
@@ -451,6 +453,10 @@ export async function moveDocument(id: string, newParentId: string | null) {
     }
     
     const parentData = parentSnap.data();
+
+    if (parentData.deleted) {
+      throw new Error("Destination parent not found");
+    }
     
     // Validate same space
     if (parentData.spaceId !== spaceId) {
@@ -462,6 +468,7 @@ export async function moveDocument(id: string, newParentId: string | null) {
       throw new Error("Cannot move a document under its own descendant");
     }
     
+    destinationDepth = (parentData.path?.length || 0) + 1;
     newPath = calculateNewPath(parentData.path, newParentId);
   }
 
@@ -473,6 +480,14 @@ export async function moveDocument(id: string, newParentId: string | null) {
   );
   
   const descendantsSnap = await getDocs(descendantsQuery);
+
+  // Validate 4-level hierarchy depth invariant: destination depth + moved subtree height <= 4
+  const descendantPaths = descendantsSnap.docs.map((d) => d.data().path || []);
+  const subtreeHeight = calculateSubtreeHeightFromPaths(id, descendantPaths);
+
+  if (destinationDepth + subtreeHeight > 4) {
+    throw new Error("Moving this document exceeds the maximum hierarchy depth of 4 levels");
+  }
   
   // Use a single batch for atomicity. If limit (500) exceeded, it will fail safely.
   const batch = writeBatch(db);
