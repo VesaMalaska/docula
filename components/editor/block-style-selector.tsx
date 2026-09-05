@@ -36,13 +36,13 @@ export function BlockStyleSelector({ editor }: BlockStyleSelectorProps) {
           type="button"
           className={cn(
             "flex items-center justify-between gap-1.5 rounded px-2 py-1 text-xs font-medium min-w-[105px] h-7 border border-transparent hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            currentStyle.id !== "paragraph" && "bg-accent/60 text-accent-foreground",
+            currentStyle.id !== "paragraph" && "bg-accent text-accent-foreground font-semibold ring-1 ring-ring shadow-xs",
           )}
           title={`Text style: ${currentStyle.label}`}
           aria-label={`Text style: ${currentStyle.label}`}
         >
           <span className="truncate">{currentStyle.label}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60 shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[130px]">

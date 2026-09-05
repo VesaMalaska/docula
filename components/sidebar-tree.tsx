@@ -198,7 +198,7 @@ export function SidebarTree({ spaceId, spaceControlRef }: SidebarTreeProps) {
     return <SidebarSkeleton />;
   }
 
-  if (error) return <div className="text-sm text-red-500 px-4">Error: {error.message}</div>;
+  if (error) return <div className="text-sm text-destructive px-4">Error: {error.message}</div>;
 
   const contextValue: TreeContextValue = {
     triggerRefs,

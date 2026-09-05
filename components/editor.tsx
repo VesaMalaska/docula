@@ -566,7 +566,7 @@ export function Editor({
               <button
                 type="button"
                 onClick={decreaseFontSize}
-                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
+                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 title="Decrease font size"
                 aria-label="Decrease font size"
               >
@@ -578,7 +578,7 @@ export function Editor({
               <button
                 type="button"
                 onClick={increaseFontSize}
-                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium"
+                className="rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 title="Increase font size"
                 aria-label="Increase font size"
               >
@@ -629,8 +629,8 @@ function ToolbarBtn({
       title={title || ariaLabel}
       aria-label={ariaLabel || title}
       className={cn(
-        "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed outline-none",
-        isActive && "bg-accent text-accent-foreground",
+        "rounded p-1.5 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isActive && "bg-accent text-accent-foreground font-semibold ring-1 ring-ring shadow-xs",
       )}
     >
       {icon}

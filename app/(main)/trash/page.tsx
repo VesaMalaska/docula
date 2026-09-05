@@ -62,7 +62,7 @@ export default function TrashbinPage() {
 
                         {(!spaces || spaces.length === 0) && (!deletedSpaces || deletedSpaces.length === 0) && (
                             <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
-                                <Archive className="h-12 w-12 mb-4 opacity-50" />
+                                <Archive className="h-12 w-12 mb-4" />
                                 <p>Trash is empty.</p>
                             </div>
                         )}
@@ -239,7 +239,7 @@ function TrashSpaceSection({
                                 onKeyDown={() => { isPointerRestoreRef.current = false; }}
                                 onClick={() => handleRestoreClick(doc.id)}
                                 disabled={isRestoring || isDeleting}
-                                className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600 hover:text-green-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 title="Restore"
                             >
                                 <RefreshCw className="h-4 w-4" />
@@ -252,7 +252,7 @@ function TrashSpaceSection({
                                 }}
                                 onClick={() => handleDeleteClick(doc.id)}
                                 disabled={isRestoring || isDeleting}
-                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 title="Delete Forever"
                             >
                                 <Trash2 className="h-4 w-4" />
@@ -405,7 +405,7 @@ function DeletedSpacesSection({
                             onKeyDown={() => { isPointerRestoreRef.current = false; }}
                             onClick={() => handleRestoreClick(space.id)}
                             disabled={isRestoring || isDeleting}
-                            className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600 hover:text-green-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             title="Restore Space"
                         >
                             <RefreshCw className="h-4 w-4" />
@@ -418,7 +418,7 @@ function DeletedSpacesSection({
                             }}
                             onClick={() => handleDeleteClick(space)}
                             disabled={isRestoring || isDeleting}
-                            className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             title="Delete Forever"
                         >
                             <Trash2 className="h-4 w-4" />

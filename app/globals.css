@@ -18,16 +18,16 @@
   /* slate-100 */
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  /* slate-500 */
+  --muted-foreground: oklch(0.446 0.043 257.281);
+  /* slate-600 */
   --accent: oklch(0.968 0.007 247.896);
   --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.505 0.213 27.518);
   --destructive-foreground: #f8fafc;
-  --border: oklch(0.929 0.013 255.508);
-  /* slate-200 */
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
+  --border: oklch(0.85 0.025 252.894);
+  /* slate-300 */
+  --input: oklch(0.63 0.035 256.788);
+  --ring: oklch(0.446 0.043 257.281);
 
   /* Custom semantic vars for sidebar if needed, generally handled by utilities + dark variant, 
      but setting base bg here helps */
@@ -60,9 +60,9 @@
 
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
 
-  --sidebar-border: oklch(0.929 0.013 255.508);
+  --sidebar-border: oklch(0.85 0.025 252.894);
 
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --sidebar-ring: oklch(0.446 0.043 257.281);
 }
 
 .dark {
@@ -170,6 +170,11 @@ body {
   .prose-dynamic {
     font-size: inherit !important;
     max-width: none !important;
+    --tw-prose-bullets: var(--muted-foreground);
+    --tw-prose-quote-borders: var(--border);
+    --tw-prose-captions: var(--muted-foreground);
+    --tw-prose-th-borders: var(--input);
+    --tw-prose-td-borders: var(--input);
   }
 
   .prose-dynamic h1 {
@@ -239,7 +244,7 @@ body {
   .prose-dynamic table td,
   .prose-dynamic table th {
     min-width: 1em;
-    border: 1px solid var(--border);
+    border: 1px solid var(--input);
     padding: 3px 5px;
     vertical-align: top;
     box-sizing: border-box;

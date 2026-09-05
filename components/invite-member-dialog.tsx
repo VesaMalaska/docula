@@ -101,7 +101,7 @@ export function InviteMemberDialog({ spaceId, currentMembers }: InviteMemberDial
                          <p className="text-sm text-destructive">{errorMessage}</p>
                     )}
                     {status === "success" && (
-                         <p className="text-sm text-green-600 flex items-center gap-2"><Check className="h-4 w-4" /> Member added!</p>
+                         <p className="text-sm text-green-700 dark:text-green-400 flex items-center gap-2"><Check className="h-4 w-4" /> Member added!</p>
                     )}
                 </div>
 
