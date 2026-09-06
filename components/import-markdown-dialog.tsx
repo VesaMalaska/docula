@@ -234,8 +234,11 @@ export function ImportMarkdownDialog({
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div
+              role="alert"
+              className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm"
+            >
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
