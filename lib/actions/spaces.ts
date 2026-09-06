@@ -10,13 +10,17 @@ import {
   where, 
   serverTimestamp,
   orderBy,
-  deleteDoc
+  deleteDoc,
+  arrayUnion,
+  runTransaction
 } from "firebase/firestore";
 import { Space } from "@/lib/types";
 import { validateSpaceName } from "@/lib/space-validation";
+import { validateMemberEmail } from "@/lib/member-management";
 
-export { validateSpaceName };
+export { validateSpaceName, validateMemberEmail };
 export type { SpaceNameValidationResult } from "@/lib/space-validation";
+export type { MemberEmailValidationResult } from "@/lib/member-management";
 
 export async function renameSpace(spaceId: string, name: string): Promise<string> {
   const validation = validateSpaceName(name);
@@ -103,6 +107,51 @@ export async function leaveSpace(spaceId: string, userId: string) {
         });
       }
     }
+}
+
+export async function addMemberToSpace(
+  spaceId: string,
+  email: string
+): Promise<{ uid: string; email: string }> {
+  const validation = validateMemberEmail(email);
+  if (!validation.isValid) {
+    throw new Error(validation.error || "Please enter a valid email address.");
+  }
+  const cleanEmail = validation.trimmedEmail;
+
+  // 1. Find user by email
+  const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+  const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    throw new Error("User not found. They must sign up first.");
+  }
+
+  const userDoc = snapshot.docs[0];
+  const userId = userDoc.id;
+
+  // 2. Authoritative membership check and atomic update in a transaction
+  const spaceRef = doc(db, "spaces", spaceId);
+
+  await runTransaction(db, async (transaction) => {
+    const spaceSnap = await transaction.get(spaceRef);
+    if (!spaceSnap.exists()) {
+      throw new Error("Space not found.");
+    }
+
+    const data = spaceSnap.data();
+    const userIds: string[] = Array.isArray(data.userIds) ? data.userIds : [];
+
+    if (userIds.includes(userId)) {
+      throw new Error("User is already a member.");
+    }
+
+    transaction.update(spaceRef, {
+      userIds: arrayUnion(userId),
+    });
+  });
+
+  return { uid: userId, email: cleanEmail };
 }
 
 export async function getSpacesForUser(userId: string): Promise<Space[]> {

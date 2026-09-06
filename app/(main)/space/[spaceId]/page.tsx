@@ -99,7 +99,7 @@ export default function SpacePage() {
               }
             />
           )}
-          <InviteMemberDialog spaceId={space.id} currentMembers={space.userIds} />
+          <InviteMemberDialog spaceId={space.id} />
         </div>
       </div>
 
