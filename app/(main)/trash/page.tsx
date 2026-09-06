@@ -240,7 +240,8 @@ function TrashSpaceSection({
                                 onClick={() => handleRestoreClick(doc.id)}
                                 disabled={isRestoring || isDeleting}
                                 className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title="Restore"
+                                title="Restore document"
+                                aria-label={`Restore document ${doc.title}`}
                             >
                                 <RefreshCw className="h-4 w-4" />
                             </button>
@@ -253,7 +254,8 @@ function TrashSpaceSection({
                                 onClick={() => handleDeleteClick(doc.id)}
                                 disabled={isRestoring || isDeleting}
                                 className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title="Delete Forever"
+                                title="Delete permanently"
+                                aria-label={`Delete document ${doc.title} permanently`}
                             >
                                 <Trash2 className="h-4 w-4" />
                             </button>
@@ -392,13 +394,13 @@ function DeletedSpacesSection({
                     aria-label={`Deleted space: ${space.name}`}
                     className="rounded-md border bg-card p-4 flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                    <div className="flex flex-col">
-                        <span className="font-medium text-lg">{space.name}</span>
+                    <div className="flex flex-col flex-1 min-w-0">
+                        <span className="font-medium text-lg truncate">{space.name}</span>
                         <div className="text-sm text-muted-foreground flex gap-2">
                             <span>Deleted {space.deletedAt ? format(space.deletedAt.toDate(), "MMM d, yyyy") : "-"}</span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                         <button
                             type="button"
                             onPointerDown={() => { isPointerRestoreRef.current = true; }}
@@ -407,6 +409,7 @@ function DeletedSpacesSection({
                             disabled={isRestoring || isDeleting}
                             className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             title="Restore Space"
+                            aria-label={`Restore Space ${space.name}`}
                         >
                             <RefreshCw className="h-4 w-4" />
                         </button>
@@ -419,7 +422,8 @@ function DeletedSpacesSection({
                             onClick={() => handleDeleteClick(space)}
                             disabled={isRestoring || isDeleting}
                             className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            title="Delete Forever"
+                            title="Delete permanently"
+                            aria-label={`Delete Space ${space.name} permanently`}
                         >
                             <Trash2 className="h-4 w-4" />
                         </button>

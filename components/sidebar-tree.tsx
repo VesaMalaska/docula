@@ -393,7 +393,8 @@ function TreeNode({
                     onClick={(e) => createChild(e)}
                     disabled={isCreating}
                     className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted cursor-pointer"
-                    title="Add Child Page"
+                    title="Add child document"
+                    aria-label={`Add child document to ${node.title}`}
                 >
                     {isCreating ? <Loader2 className="h-3 w-3 animate-spin"/> : <Plus className="h-3 w-3" />}
                 </button>

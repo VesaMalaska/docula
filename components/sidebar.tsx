@@ -188,6 +188,7 @@ export function Sidebar({ onClose, closeButtonRef }: SidebarProps) {
                         ref={addSpaceButtonRef}
                         className="rounded p-1 hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer"
                         title="Add Space"
+                        aria-label="Add Space"
                     >
                         <Plus className="h-5 w-5" />
                     </button>
@@ -286,7 +287,8 @@ export function Sidebar({ onClose, closeButtonRef }: SidebarProps) {
                                             onClick={() => createDoc()}
                                             disabled={isPending}
                                             className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
-                                            title="New Document"
+                                            title="Add document"
+                                            aria-label={`Add document to ${space.name}`}
                                         >
                                             {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Plus className="h-3.5 w-3.5"/>}
                                         </button>
