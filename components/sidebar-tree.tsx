@@ -236,8 +236,8 @@ export function SidebarTree({ spaceId, spaceControlRef }: SidebarTreeProps) {
         <AlertDialog
           isOpen={activeDialog.action === "delete"}
           onClose={() => setActiveDialog(null)}
-          title="Delete Page"
-          description="Are you sure you want to delete this page? This action cannot be undone."
+          title="Delete Document"
+          description="Are you sure you want to delete this document? This action cannot be undone."
           onAction={() => activeDialog && deleteDoc(activeDialog.node)}
           variant="destructive"
           actionLabel={isDeleting ? "Deleting..." : "Delete"}

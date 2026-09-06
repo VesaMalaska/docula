@@ -121,7 +121,11 @@ export default function SpacePage() {
                     <span className="font-medium">{node.title}</span>
                     <span className="text-xs text-muted-foreground">
                       {node.children && node.children.length > 0
-                        ? `${node.children.length} sub-pages`
+                        ? `${node.children.length} ${
+                            node.children.length === 1
+                              ? "child document"
+                              : "child documents"
+                          }`
                         : ""}
                     </span>
                   </div>

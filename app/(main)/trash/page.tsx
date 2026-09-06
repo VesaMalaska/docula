@@ -15,7 +15,7 @@ import { calculateListFallback } from "@/lib/focus-fallback";
 export default function TrashbinPage() {
     const { user } = useAuth();
     const headerBackRef = useRef<HTMLAnchorElement | null>(null);
-    const mainRef = useRef<HTMLElement | null>(null);
+    const mainRef = useRef<HTMLDivElement | null>(null);
 
     const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
         queryKey: ["user-spaces", user?.uid],
@@ -42,10 +42,9 @@ export default function TrashbinPage() {
                 <h1 className="text-xl font-semibold">Trashbin</h1>
             </header>
 
-            <main
+            <div
                 ref={mainRef}
                 tabIndex={-1}
-                aria-label="Trashbin"
                 className="flex-1 overflow-auto p-6 space-y-8 outline-none"
             >
                 {(isLoadingSpaces || isLoadingDeletedSpaces) ? (
@@ -82,7 +81,7 @@ export default function TrashbinPage() {
                         )}
                     </>
                 )}
-            </main>
+            </div>
         </div>
     );
 }
@@ -94,7 +93,7 @@ function TrashSpaceSection({
 }: {
     space: Space;
     headerBackRef: React.RefObject<HTMLAnchorElement | null>;
-    mainRef: React.RefObject<HTMLElement | null>;
+    mainRef: React.RefObject<HTMLDivElement | null>;
 }) {
     const { user } = useAuth();
     const queryClient = useQueryClient();
@@ -286,7 +285,7 @@ function DeletedSpacesSection({
 }: {
     deletedSpaces: Space[];
     headerBackRef: React.RefObject<HTMLAnchorElement | null>;
-    mainRef: React.RefObject<HTMLElement | null>;
+    mainRef: React.RefObject<HTMLDivElement | null>;
 }) {
     const queryClient = useQueryClient();
     const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
