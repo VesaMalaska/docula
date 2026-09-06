@@ -47,7 +47,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-muted transition-colors">
+    <main className="flex h-screen w-full items-center justify-center bg-muted transition-colors">
       <div className="w-full max-w-md space-y-8 rounded-lg bg-card p-10 shadow-md transition-colors border border-border">
         <div className="text-center">
           <h2 className="mt-6 text-3xl font-extrabold text-foreground">
@@ -132,6 +132,6 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
