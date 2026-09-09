@@ -1,4 +1,4 @@
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { 
   collection, 
   doc, 
@@ -16,9 +16,9 @@ import {
 } from "firebase/firestore";
 import { Space } from "@/lib/types";
 import { validateSpaceName } from "@/lib/space-validation";
-import { validateMemberEmail } from "@/lib/member-management";
+import { validateMemberEmail, canRemoveMember, canLeaveSpace } from "@/lib/member-management";
 
-export { validateSpaceName, validateMemberEmail };
+export { validateSpaceName, validateMemberEmail, canRemoveMember, canLeaveSpace };
 export type { SpaceNameValidationResult } from "@/lib/space-validation";
 export type { MemberEmailValidationResult } from "@/lib/member-management";
 
@@ -62,51 +62,126 @@ export async function createSpace(name: string, isPublic: boolean, description: 
   }
 }
 
-export async function joinSpace(spaceId: string, userId: string): Promise<boolean> {
+export async function joinSpace(spaceId: string, userIdArg?: string): Promise<boolean> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("You must be signed in to join a space.");
+  }
+  if (userIdArg && userIdArg !== currentUser.uid) {
+    throw new Error("Cannot join a space on behalf of another user.");
+  }
+  const userId = currentUser.uid;
   const spaceRef = doc(db, "spaces", spaceId);
 
-  try {
-    const spaceSnap = await getDoc(spaceRef);
-
-    if (spaceSnap.exists()) {
-      const data = spaceSnap.data();
-      // Check if already a member to avoid unnecessary writes
-      if (data.userIds && data.userIds.includes(userId)) {
-          console.log(`User ${userId} is already a member of space ${spaceId}`);
-          return true;
-      }
-
-      if (data.isPublic) {
-        await updateDoc(spaceRef, {
-          userIds: [...(data.userIds || []), userId]
-        });
-        console.log(`User ${userId} joined space ${spaceId}`);
-        return true;
-      } else {
-          console.warn(`User ${userId} attempted to join private space ${spaceId}`);
-      }
-    } else {
-        console.error(`Space ${spaceId} not found`);
+  return await runTransaction(db, async (transaction) => {
+    const spaceSnap = await transaction.get(spaceRef);
+    if (!spaceSnap.exists()) {
+      throw new Error("Space not found.");
     }
-  } catch (error) {
-    console.error(`Error joining space ${spaceId} for user ${userId}:`, error);
-    throw error;
-  }
-  return false;
+
+    const data = spaceSnap.data();
+    if (!data.isPublic) {
+      throw new Error("Cannot join a private space.");
+    }
+    if (data.deletedAt) {
+      throw new Error("Cannot join a deleted space.");
+    }
+
+    const userIds: string[] = Array.isArray(data.userIds) ? data.userIds : [];
+    if (userIds.includes(userId)) {
+      return true;
+    }
+
+    transaction.update(spaceRef, {
+      userIds: arrayUnion(userId),
+      updatedAt: serverTimestamp(),
+    });
+
+    return true;
+  });
 }
 
-export async function leaveSpace(spaceId: string, userId: string) {
-    const spaceRef = doc(db, "spaces", spaceId);
-    const spaceSnap = await getDoc(spaceRef);
-  
-    if (spaceSnap.exists()) {
-      const data = spaceSnap.data();
-      if (data.userIds.includes(userId)) {
-        await updateDoc(spaceRef, {
-          userIds: data.userIds.filter((id: string) => id !== userId)
-        });
-      }
+export async function removeMemberFromSpace(spaceId: string, memberId: string): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("You must be signed in to remove a member.");
+  }
+  const callerId = currentUser.uid;
+
+  const spaceRef = doc(db, "spaces", spaceId);
+
+  await runTransaction(db, async (transaction) => {
+    const spaceSnap = await transaction.get(spaceRef);
+    if (!spaceSnap.exists()) {
+      throw new Error("Space not found.");
     }
+
+    const data = spaceSnap.data();
+
+    if (data.deletedAt) {
+      throw new Error("Cannot modify a deleted space.");
+    }
+
+    const userIds: string[] = Array.isArray(data.userIds) ? data.userIds : [];
+    const ownerId: string = data.ownerId;
+
+    const validation = canRemoveMember({
+      callerId,
+      ownerId,
+      targetMemberId: memberId,
+      userIds,
+    });
+
+    if (!validation.isValid) {
+      throw new Error(validation.error || "Failed to remove member.");
+    }
+
+    transaction.update(spaceRef, {
+      userIds: userIds.filter((id: string) => id !== memberId),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+export async function leaveSpace(spaceId: string): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("You must be signed in to leave a space.");
+  }
+  const callerId = currentUser.uid;
+
+  const spaceRef = doc(db, "spaces", spaceId);
+
+  await runTransaction(db, async (transaction) => {
+    const spaceSnap = await transaction.get(spaceRef);
+    if (!spaceSnap.exists()) {
+      throw new Error("Space not found.");
+    }
+
+    const data = spaceSnap.data();
+
+    if (data.deletedAt) {
+      throw new Error("Cannot modify a deleted space.");
+    }
+
+    const userIds: string[] = Array.isArray(data.userIds) ? data.userIds : [];
+    const ownerId: string = data.ownerId;
+
+    const validation = canLeaveSpace({
+      callerId,
+      ownerId,
+      userIds,
+    });
+
+    if (!validation.isValid) {
+      throw new Error(validation.error || "Failed to leave space.");
+    }
+
+    transaction.update(spaceRef, {
+      userIds: userIds.filter((id: string) => id !== callerId),
+      updatedAt: serverTimestamp(),
+    });
+  });
 }
 
 export async function addMemberToSpace(
@@ -148,6 +223,7 @@ export async function addMemberToSpace(
 
     transaction.update(spaceRef, {
       userIds: arrayUnion(userId),
+      updatedAt: serverTimestamp(),
     });
   });
 
@@ -197,12 +273,15 @@ export async function getPublicSpaces(): Promise<Space[]> {
     return spaces;
 }
 
-export async function getSpace(spaceId: string): Promise<Space | null> {
+export async function getSpace(spaceId: string, includeDeleted: boolean = false): Promise<Space | null> {
     const docRef = doc(db, "spaces", spaceId);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
         const data = docSnap.data();
+        if (!includeDeleted && data.deletedAt) {
+            return null;
+        }
         return { id: docSnap.id, ...data } as Space;
     }
     return null;
@@ -229,25 +308,56 @@ export async function getDeletedSpacesForUser(userId: string): Promise<Space[]> 
     return spaces;
 }
 
-export async function deleteSpace(spaceId: string, userId: string) {
+export async function deleteSpace(spaceId: string, userIdArg?: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+        throw new Error("You must be signed in to delete a space.");
+    }
+    const resolvedUserId = currentUser.uid;
+    if (userIdArg && userIdArg !== resolvedUserId) {
+        throw new Error("Cannot delete a space on behalf of another user.");
+    }
     const spaceRef = doc(db, "spaces", spaceId);
+    const spaceSnap = await getDoc(spaceRef);
+    if (!spaceSnap.exists()) throw new Error("Space not found.");
+    if (spaceSnap.data().ownerId !== resolvedUserId) {
+        throw new Error("Only the space owner can delete this space.");
+    }
     await updateDoc(spaceRef, {
         deletedAt: serverTimestamp(),
-        deletedBy: userId
+        deletedBy: resolvedUserId,
+        updatedAt: serverTimestamp(),
     });
 }
 
 export async function restoreSpace(spaceId: string) {
     const spaceRef = doc(db, "spaces", spaceId);
+    const spaceSnap = await getDoc(spaceRef);
+    if (!spaceSnap.exists()) throw new Error("Space not found.");
+    const currentUser = auth.currentUser;
+    if (!currentUser || spaceSnap.data().ownerId !== currentUser.uid) {
+        throw new Error("Only the space owner can restore this space.");
+    }
     await updateDoc(spaceRef, {
         deletedAt: null,
         deletedBy: null
     });
 }
 
-import { getDeletedDocuments, permanentlyDeleteDocument } from "./document";
+import { permanentlyDeleteDocument } from "./document";
 
 export async function permanentlyDeleteSpace(spaceId: string) {
+    const spaceRef = doc(db, "spaces", spaceId);
+    const spaceSnap = await getDoc(spaceRef);
+    if (!spaceSnap.exists()) throw new Error("Space not found.");
+    const currentUser = auth.currentUser;
+    if (!currentUser || spaceSnap.data().ownerId !== currentUser.uid) {
+        throw new Error("Only the space owner can permanently delete this space.");
+    }
+    const data = spaceSnap.data();
+    if (!data.deletedAt) {
+        throw new Error("Cannot permanently delete an active space. Soft-delete it first.");
+    }
     // 1. Permanently delete all documents in the space
     // We can re-use getDeletedDocuments API-wise, but we actually want ALL documents (even not deleted ones?)
     // Actually, if space is deleted, documents might still be there.

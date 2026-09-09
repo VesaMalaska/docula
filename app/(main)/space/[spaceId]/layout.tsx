@@ -2,10 +2,10 @@
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { getSpace } from "@/lib/actions/spaces";
+import { isSpaceAccessible } from "@/lib/member-management";
 import { Loader2 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, notFound } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Space } from "@/lib/types";
 
 export default function SpaceLayout({
   children,
@@ -15,47 +15,46 @@ export default function SpaceLayout({
   const { user, loading } = useAuth();
   const params = useParams();
   const spaceId = params.spaceId as string;
-  const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
+  const [isUnavailable, setIsUnavailable] = useState(false);
 
   useEffect(() => {
     async function checkAccess() {
       if (loading) return;
       if (!user) {
-         // Main layout handles redirect to login, but safe to wait
-         return; 
+        // Main layout handles redirect to login, but safe to wait
+        return;
       }
 
       try {
         const space = await getSpace(spaceId);
-        if (!space) {
-            // Space doesn't exist
-            router.push("/404"); 
-            return;
+        if (!isSpaceAccessible(space, user.uid)) {
+          setIsUnavailable(true);
+          setIsChecking(false);
+          return;
         }
 
-        const hasAccess = space.isPublic || space.userIds.includes(user.uid);
-        if (!hasAccess) {
-             router.push("/"); // Or some "Access Denied" page
-             return;
-        }
-        
         setIsChecking(false);
-      } catch (e) {
-        console.error("Error checking space access", e);
-        router.push("/");
+      } catch {
+        // Space was permanently deleted, does not exist, or caller lacks access
+        setIsUnavailable(true);
+        setIsChecking(false);
       }
     }
 
     checkAccess();
-  }, [user, loading, spaceId, router]);
+  }, [user, loading, spaceId]);
 
   if (loading || isChecking) {
-      return (
-        <div className="flex h-full w-full items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      );
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isUnavailable) {
+    notFound();
   }
 
   return <>{children}</>;

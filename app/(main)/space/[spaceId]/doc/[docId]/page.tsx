@@ -6,14 +6,17 @@ import {
   updateDocument,
   getSidebarTree,
 } from "@/lib/actions/document";
+import { getSpace, joinSpace } from "@/lib/actions/spaces";
 import { acquireLock, releaseLock } from "@/lib/actions/locking";
 import { permanentizeImages, deleteImages } from "@/lib/actions/s3";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
-import { useParams, useSearchParams, useRouter } from "next/navigation";
+import { useParams, useSearchParams, useRouter, notFound } from "next/navigation";
 import { Editor } from "@/components/editor";
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Save, Edit2, AlertCircle } from "lucide-react";
+import { Loader2, Save, Edit2, AlertCircle, Info, UserPlus } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { SidebarNode } from "@/lib/types";
 import {
@@ -34,6 +37,7 @@ import { Download, FolderOutput, MoreHorizontal } from "lucide-react";
 import { jsonToMarkdown } from "@/lib/markdown-converter";
 import { jsonToDocx } from "@/lib/docx-converter";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
+import { resolveJoinSpaceError } from "@/lib/member-management";
 
 function BacklinksList({
   docIds,
@@ -115,6 +119,7 @@ export default function DocPage() {
   const id = params.docId as string;
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -128,9 +133,43 @@ export default function DocPage() {
   const isEditingRef = useRef(false);
   const sessionImagesRef = useRef<string[]>([]);
 
+  const { data: space } = useQuery({
+    queryKey: ["space", spaceId],
+    queryFn: () => getSpace(spaceId),
+    enabled: !!spaceId,
+  });
+
+  const isSpaceOwner = !!user && space?.ownerId === user?.uid;
+  const isSpaceMember =
+    !!user && Array.isArray(space?.userIds) && space.userIds.includes(user.uid);
+  const isContributor = isSpaceOwner || isSpaceMember;
+
   const { data: doc, isLoading } = useQuery({
     queryKey: ["doc", id],
     queryFn: () => getDocument(id),
+  });
+
+  const { mutate: joinSpc, isPending: isJoiningSpace } = useMutation({
+    mutationFn: async () => {
+      await joinSpace(spaceId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["space", spaceId] });
+      queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
+      toast({
+        title: "Joined space",
+        description: `You are now a member of ${space?.name || "this space"}. You can now edit documents.`,
+      });
+    },
+    onError: (err) => {
+      const resolved = resolveJoinSpaceError(err);
+      toast({
+        title: "Error joining space",
+        description: resolved.message,
+        variant: "destructive",
+      });
+    },
   });
 
   useEffect(() => {
@@ -184,12 +223,23 @@ export default function DocPage() {
 
   const handleEdit = async () => {
     if (!user) return;
-    const success = await acquireLock(
+
+    if (!isContributor) {
+      toast({
+        title: "Permission denied",
+        description:
+          "You do not have permission to edit documents in this space. Join the space to contribute.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const lockResult = await acquireLock(
       id,
       user.uid,
       user.displayName || user.email || "Unknown",
     );
-    if (success) {
+    if (lockResult.success) {
       // Force fetch the freshest document before entering edit mode 
       // to avoid initializing the editor with stale local useQuery state.
       const freshDoc = await getDocument(id);
@@ -200,10 +250,26 @@ export default function DocPage() {
       
       setIsEditing(true);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
+    } else if (lockResult.reason === "permission_denied") {
+      toast({
+        title: "Permission denied",
+        description:
+          "You do not have permission to edit documents in this space. Join the space to contribute.",
+        variant: "destructive",
+      });
+    } else if (lockResult.reason === "locked") {
+      toast({
+        title: "Document locked",
+        description: `Document is currently being edited by ${lockResult.lockedBy || "another user"}.`,
+        variant: "destructive",
+      });
     } else {
-      alert(
-        "Could not acquire lock. Document is being edited by someone else.",
-      );
+      toast({
+        title: "Could not acquire lock",
+        description:
+          lockResult.message || "Document is being edited by someone else.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -341,12 +407,9 @@ export default function DocPage() {
   });
 
   if (isLoading) return <DocSkeleton />;
-  if (!doc)
-    return (
-      <div className="p-8 text-muted-foreground">
-        Document not found
-      </div>
-    );
+  if (!doc || !space || space.deletedAt) {
+    notFound();
+  }
 
   const isLockedByOther =
     doc.lock?.active &&
@@ -361,6 +424,54 @@ export default function DocPage() {
       />
       <div className="mx-auto max-w-4xl px-4 md:px-8">
         <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
+
+        {!isContributor && (
+          <div className="mb-4 rounded-md bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-900/30">
+            <div className="flex items-center justify-between">
+              <div className="flex">
+                <div className="shrink-0">
+                  <Info
+                    className="h-5 w-5 text-blue-600 dark:text-blue-500"
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Read-only mode
+                  </h3>
+                  <div className="mt-1 text-sm text-blue-700 dark:text-blue-300">
+                    <p>
+                      You are viewing this public document in read-only mode. Join this space to contribute.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {space?.isPublic && user && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="gap-1 bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => joinSpc()}
+                    disabled={isJoiningSpace}
+                  >
+                    {isJoiningSpace ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-3.5 w-3.5" />
+                    )}
+                    Join Space
+                  </Button>
+                )}
+                <Link href={`/space/${spaceId}`}>
+                  <Button size="sm" variant="outline" className="border-blue-300 text-blue-800 dark:text-blue-200">
+                    View Space
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         {isLockedByOther && (
           <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 border border-amber-200 dark:border-amber-900/30">
@@ -459,13 +570,15 @@ export default function DocPage() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-60">
-                    <DropdownMenuItem
-                      onSelect={() => setIsMoveDialogOpen(true)}
-                      className="cursor-pointer"
-                    >
-                      <FolderOutput className="h-4 w-4 mr-2" />
-                      Move document...
-                    </DropdownMenuItem>
+                    {isContributor && (
+                      <DropdownMenuItem
+                        onSelect={() => setIsMoveDialogOpen(true)}
+                        className="cursor-pointer"
+                      >
+                        <FolderOutput className="h-4 w-4 mr-2" />
+                        Move document...
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       onSelect={() => handleExport("markdown")}
                       className="cursor-pointer"
@@ -483,14 +596,48 @@ export default function DocPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <button
-                  onClick={handleEdit}
-                  disabled={!!isLockedByOther}
-                  className="flex items-center gap-1 rounded border border-border text-foreground px-3 py-1 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                >
-                  <Edit2 className="h-4 w-4" />
-                  {isLockedByOther ? "Locked" : "Edit"}
-                </button>
+                {!isContributor ? (
+                  space?.isPublic && user ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1 text-xs h-7 px-2.5"
+                      onClick={() => joinSpc()}
+                      disabled={isJoiningSpace}
+                      title="Join this public space to edit documents"
+                    >
+                      {isJoiningSpace ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <UserPlus className="h-3.5 w-3.5" />
+                      )}
+                      Join to Edit
+                    </Button>
+                  ) : (
+                    <span
+                      tabIndex={0}
+                      role="status"
+                      aria-label="Document is read-only. You must be a member of this space to edit."
+                      className="inline-flex items-center gap-1 rounded border border-border bg-muted/50 text-muted-foreground px-2.5 py-1 text-xs font-medium cursor-default"
+                    >
+                      Read-only
+                    </span>
+                  )
+                ) : (
+                  <button
+                    onClick={handleEdit}
+                    disabled={!!isLockedByOther}
+                    title={
+                      isLockedByOther
+                        ? "Document is locked by another user"
+                        : "Edit document"
+                    }
+                    className="flex items-center gap-1 rounded border border-border text-foreground px-3 py-1 text-sm font-medium hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    {isLockedByOther ? "Locked" : "Edit"}
+                  </button>
+                )}
               </div>
             )}
           </div>

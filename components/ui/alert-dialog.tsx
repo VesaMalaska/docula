@@ -20,6 +20,8 @@ interface AlertDialogProps {
   cancelLabel?: string;
   onAction?: () => void;
   variant?: "default" | "destructive";
+  /** Whether an asynchronous operation triggered by the dialog action is in progress. */
+  isLoading?: boolean;
   /** Ref to the element that should receive focus when the dialog closes. */
   returnFocusRef?: React.MutableRefObject<HTMLElement | null>;
   /** Optional ref to the element that should receive focus when the action is confirmed. */
@@ -35,13 +37,21 @@ export function AlertDialog({
   cancelLabel = "Cancel",
   onAction,
   variant = "default",
+  isLoading,
   returnFocusRef,
   actionReturnFocusRef,
 }: AlertDialogProps) {
   const isPointerInteractionRef = React.useRef(false);
+  const isSubmittingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      isSubmittingRef.current = false;
+    }
+  }, [isOpen]);
 
   const handleOpenChange = (open: boolean) => {
-    if (!open) {
+    if (!open && !isLoading) {
       onClose();
     }
   };
@@ -98,6 +108,7 @@ export function AlertDialog({
               <Button
                 type="button"
                 variant="ghost"
+                disabled={isLoading}
                 onClick={onClose}
               >
                 {cancelLabel}
@@ -105,7 +116,10 @@ export function AlertDialog({
               <Button
                 type="button"
                 variant={variant === "destructive" ? "destructive" : "default"}
+                disabled={isLoading}
                 onClick={() => {
+                  if (isLoading || isSubmittingRef.current) return;
+                  isSubmittingRef.current = true;
                   if (actionReturnFocusRef?.current) {
                     if (returnFocusRef) {
                       returnFocusRef.current = actionReturnFocusRef.current;
@@ -114,7 +128,9 @@ export function AlertDialog({
                     returnFocusRef.current = null;
                   }
                   onAction?.();
-                  onClose();
+                  if (isLoading === undefined) {
+                    onClose();
+                  }
                 }}
               >
                 {actionLabel}
@@ -123,6 +139,7 @@ export function AlertDialog({
           ) : (
             <Button
               type="button"
+              disabled={isLoading}
               onClick={onClose}
             >
               {actionLabel}

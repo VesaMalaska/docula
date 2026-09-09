@@ -143,8 +143,9 @@ describe("Cache invalidation lifecycle", () => {
 
     invalidateSpaceMemberQueries(mockQueryClient, "space-42");
 
-    assert.strictEqual(invalidatedKeys.length, 2);
+    assert.strictEqual(invalidatedKeys.length, 3);
     assert.deepStrictEqual(invalidatedKeys[0], ["space", "space-42"]);
     assert.deepStrictEqual(invalidatedKeys[1], ["space-members", "space-42"]);
+    assert.deepStrictEqual(invalidatedKeys[2], ["user-spaces"]);
   });
 });

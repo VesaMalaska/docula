@@ -3,10 +3,22 @@ import { doc, runTransaction, Timestamp } from "firebase/firestore";
 
 const LOCK_TTL_MINUTES = 5;
 
-export async function acquireLock(docId: string, userId: string, userName: string): Promise<boolean> {
+export type AcquireLockResult = {
+  success: boolean;
+  reason?: "locked" | "permission_denied" | "not_found" | "error";
+  message?: string;
+  lockedBy?: string;
+};
+
+export async function acquireLock(
+  docId: string,
+  userId: string,
+  userName: string
+): Promise<AcquireLockResult> {
   const docRef = doc(db, "documents", docId);
 
   try {
+    let lockHolder: string | undefined;
     await runTransaction(db, async (transaction) => {
       const docSnap = await transaction.get(docRef);
       if (!docSnap.exists()) throw new Error("Document does not exist");
@@ -19,7 +31,8 @@ export async function acquireLock(docId: string, userId: string, userName: strin
       if (currentLock && currentLock.active) {
          const expiresAt = currentLock.expiresAt.toDate();
          if (expiresAt > now && currentLock.userId !== userId) {
-            throw new Error(`Locked by ${currentLock.userName}`);
+            lockHolder = currentLock.userName || "another user";
+            throw new Error(`Locked by ${lockHolder}`);
          }
       }
 
@@ -36,10 +49,30 @@ export async function acquireLock(docId: string, userId: string, userName: strin
         }
       });
     });
-    return true;
-  } catch (e) {
+    return { success: true };
+  } catch (e: unknown) {
     console.error("Failed to acquire lock:", e);
-    return false;
+    const msg = e instanceof Error ? e.message : String(e);
+    const code = e && typeof e === "object" && "code" in e ? (e as { code: unknown }).code : "";
+
+    if (msg.startsWith("Locked by")) {
+      return { success: false, reason: "locked", message: msg, lockedBy: msg.replace("Locked by ", "") };
+    }
+    if (
+      code === "permission-denied" ||
+      msg.toLowerCase().includes("permission-denied") ||
+      msg.toLowerCase().includes("permission denied")
+    ) {
+      return {
+        success: false,
+        reason: "permission_denied",
+        message: "You do not have permission to edit documents in this space. Join the space to contribute.",
+      };
+    }
+    if (msg === "Document does not exist") {
+      return { success: false, reason: "not_found", message: msg };
+    }
+    return { success: false, reason: "error", message: msg };
   }
 }
 
