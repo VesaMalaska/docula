@@ -160,7 +160,7 @@ export function ImportMarkdownDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="sm:max-w-[480px]"
+        className="p-4 sm:p-6 sm:max-w-[480px] min-w-0"
         onCloseAutoFocus={handleCloseAutoFocus}
         onPointerDown={() => {
           isPointerInteractionRef.current = true;
@@ -172,20 +172,22 @@ export function ImportMarkdownDialog({
           isPointerInteractionRef.current = false;
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="min-w-0">
           <DialogTitle>Import Markdown</DialogTitle>
-          <DialogDescription>{descriptionText}</DialogDescription>
+          <DialogDescription className="min-w-0 [overflow-wrap:anywhere] break-words">
+            {descriptionText}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-3">
-          <div className="rounded-md bg-muted/50 p-3 text-sm flex items-center justify-between">
-            <span className="text-muted-foreground font-medium">Location:</span>
-            <span className="font-semibold text-foreground truncate max-w-[280px]">
+        <div className="space-y-4 py-3 min-w-0 w-full">
+          <div className="rounded-md bg-muted/50 p-3 text-sm flex items-center justify-between gap-2 min-w-0 w-full">
+            <span className="text-muted-foreground font-medium shrink-0">Location:</span>
+            <span className="font-semibold text-foreground truncate min-w-0 text-right" title={locationLabel}>
               {locationLabel}
             </span>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0 w-full">
             <input
               ref={fileInputRef}
               id="markdown-file-input"
@@ -212,10 +214,10 @@ export function ImportMarkdownDialog({
                 </span>
               </Button>
             ) : (
-              <div className="flex items-center justify-between p-3 rounded-md border border-border bg-card">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-5 w-5 text-primary shrink-0" />
-                  <span className="text-sm font-medium truncate">
+              <div className="flex items-center justify-between gap-3 p-3 rounded-md border border-border bg-card min-w-0 w-full">
+                <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                  <FileText className="h-5 w-5 text-primary shrink-0" aria-hidden="true" />
+                  <span className="text-sm font-medium truncate min-w-0" title={selectedFile.name}>
                     {selectedFile.name}
                   </span>
                 </div>
@@ -236,20 +238,21 @@ export function ImportMarkdownDialog({
           {error && (
             <div
               role="alert"
-              className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm"
+              className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm min-w-0 w-full"
             >
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
-              <span>{error}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere] break-words flex-1">{error}</span>
             </div>
           )}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="min-w-0 w-full gap-2">
           <Button
             type="button"
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={isImporting}
+            className="w-full sm:w-auto"
           >
             Cancel
           </Button>
@@ -257,6 +260,7 @@ export function ImportMarkdownDialog({
             type="button"
             onClick={() => handleImport()}
             disabled={isImporting || !selectedFile}
+            className="w-full sm:w-auto"
           >
             {isImporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isImporting ? "Importing…" : "Import"}

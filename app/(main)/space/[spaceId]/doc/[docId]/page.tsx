@@ -38,6 +38,7 @@ import { jsonToMarkdown } from "@/lib/markdown-converter";
 import { jsonToDocx } from "@/lib/docx-converter";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
 import { resolveJoinSpaceError } from "@/lib/member-management";
+import { handleDropdownDialogHandoff } from "@/lib/dialog-focus";
 
 function BacklinksList({
   docIds,
@@ -124,6 +125,10 @@ export default function DocPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const pendingDialogActionRef = useRef<"move" | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [content, setContent] = useState<any>(null);
@@ -558,9 +563,10 @@ export default function DocPage() {
               </>
             ) : (
               <div className="flex gap-2">
-                <DropdownMenu>
+                <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
                   <DropdownMenuTrigger asChild>
                     <button 
+                      ref={menuTriggerRef}
                       type="button"
                       className="flex items-center justify-center h-7 w-7 rounded border border-border text-foreground hover:bg-accent hover:text-accent-foreground text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       title="Document actions"
@@ -569,10 +575,33 @@ export default function DocPage() {
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-60">
+                  <DropdownMenuContent
+                    align="end"
+                    className="min-w-60"
+                    onCloseAutoFocus={(e) => {
+                      const pendingAction = pendingDialogActionRef.current;
+                      if (pendingAction) {
+                        pendingDialogActionRef.current = null;
+                        handleDropdownDialogHandoff({
+                          pendingAction,
+                          trigger: menuTriggerRef.current,
+                          event: e,
+                          onOpenDialog: (action) => {
+                            if (action === "move") {
+                              setIsMoveDialogOpen(true);
+                            }
+                          },
+                          returnFocusRef,
+                        });
+                      }
+                    }}
+                  >
                     {isContributor && (
                       <DropdownMenuItem
-                        onSelect={() => setIsMoveDialogOpen(true)}
+                        onSelect={(e) => {
+                          e.stopPropagation();
+                          pendingDialogActionRef.current = "move";
+                        }}
                         className="cursor-pointer"
                       >
                         <FolderOutput className="h-4 w-4 mr-2" />
@@ -684,6 +713,7 @@ export default function DocPage() {
         documentId={id}
         currentParentId={doc?.parentId || null}
         documentTitle={doc?.title}
+        returnFocusRef={returnFocusRef}
       />
     </div>
   );
