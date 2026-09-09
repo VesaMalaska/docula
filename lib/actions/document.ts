@@ -301,9 +301,17 @@ export async function permanentlyDeleteDocument(id: string) {
     
     if (docSnap.exists()) {
         const data = docSnap.data();
-        // Permanently delete images from "deleted/" folder
-        if (data.content) {
-            const imageUrls = extractImageUrls(data.content);
+        // 1. Discover content (either from subcollection /content/main or inline legacy)
+        let content = data.content;
+        const contentRef = doc(db, "documents", id, "content", "main");
+        const contentSnap = await getDoc(contentRef);
+        if (contentSnap.exists()) {
+            content = contentSnap.data()?.content ?? content;
+        }
+
+        // 2. Permanently delete images from "deleted/" folder
+        if (content) {
+            const imageUrls = extractImageUrls(content);
             if (imageUrls.length > 0) {
                 // We need to construct the keys that are in the deleted/ folder
                 // The softDeleteImages moved them to deleted/ prefix
@@ -312,11 +320,27 @@ export async function permanentlyDeleteDocument(id: string) {
                 await permanentDeleteImages(imageUrls);
             }
         }
+
+        // 3. Delete content subcollection document if present
+        if (contentSnap.exists()) {
+            await deleteDoc(contentRef);
+        }
+
+        // 4. Delete root document record
         await deleteDoc(docRef);
     }
 }
 
 export async function getSidebarTree(spaceId: string): Promise<SidebarNode[]> {
+  try {
+    const spaceSnap = await getDoc(doc(db, "spaces", spaceId));
+    if (!spaceSnap.exists() || spaceSnap.data()?.deletedAt) {
+      return [];
+    }
+  } catch {
+    return [];
+  }
+
   const q = query(
       collection(db, "documents"), 
       where("spaceId", "==", spaceId),

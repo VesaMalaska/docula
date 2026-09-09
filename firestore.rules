@@ -6,45 +6,208 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSpaceOwner(spaceData) {
+      return isAuthenticated() && ('ownerId' in spaceData) && request.auth.uid == spaceData.ownerId;
+    }
+
     function isSpaceMember(spaceData) {
+      return isAuthenticated() && ('userIds' in spaceData) && (request.auth.uid in spaceData.userIds);
+    }
+
+    function isSpaceActive(spaceData) {
+      return !('deletedAt' in spaceData) || spaceData.deletedAt == null;
+    }
+
+    function isSpaceReader(spaceData) {
       return isAuthenticated() && (
         ('isPublic' in spaceData && spaceData.isPublic == true) ||
-        ('userIds' in spaceData && request.auth.uid in spaceData.userIds) ||
-        ('ownerId' in spaceData && request.auth.uid == spaceData.ownerId)
+        isSpaceOwner(spaceData) ||
+        isSpaceMember(spaceData)
       );
     }
 
-    // Helper to Access Space Data safely
-    function canAccessSpace(spaceId) {
-       let spacePath = /databases/$(database)/documents/spaces/$(spaceId);
-       return exists(spacePath) && isSpaceMember(get(spacePath).data);
+    function isSpaceContributor(spaceData) {
+      return isAuthenticated() && (isSpaceOwner(spaceData) || isSpaceMember(spaceData));
+    }
+
+    function getSpaceData(spaceId) {
+      return get(/databases/$(database)/documents/spaces/$(spaceId)).data;
+    }
+
+    function spaceExists(spaceId) {
+      return exists(/databases/$(database)/documents/spaces/$(spaceId));
+    }
+
+    function canReadSpace(spaceId) {
+      return spaceExists(spaceId) && isSpaceActive(getSpaceData(spaceId)) && isSpaceReader(getSpaceData(spaceId));
+    }
+
+    function canCleanupDocument(spaceId) {
+      return spaceExists(spaceId) &&
+        isSpaceOwner(getSpaceData(spaceId)) &&
+        !isSpaceActive(getSpaceData(spaceId));
+    }
+
+    function canContributeToSpace(spaceId) {
+      return spaceExists(spaceId) && isSpaceActive(getSpaceData(spaceId)) && isSpaceContributor(getSpaceData(spaceId));
+    }
+
+    function isValidSpaceCreate() {
+      return isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid &&
+        request.resource.data.userIds is list &&
+        request.resource.data.userIds.size() == 1 &&
+        request.resource.data.userIds[0] == request.auth.uid &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.isPublic is bool &&
+        (!('description' in request.resource.data) || request.resource.data.description is string) &&
+        ('createdAt' in request.resource.data) &&
+        (request.resource.data.createdAt is timestamp) &&
+        (request.resource.data.createdAt == request.time) &&
+        ('updatedAt' in request.resource.data) &&
+        (request.resource.data.updatedAt is timestamp) &&
+        (request.resource.data.updatedAt == request.time) &&
+        (!('deletedAt' in request.resource.data) || request.resource.data.deletedAt == null) &&
+        (!('deletedBy' in request.resource.data) || request.resource.data.deletedBy == null);
+    }
+
+    function retainsOwnership(spaceData) {
+      return request.resource.data.ownerId == spaceData.ownerId &&
+        ('ownerId' in spaceData) &&
+        ('userIds' in spaceData) &&
+        ('userIds' in request.resource.data) &&
+        (spaceData.userIds is list) &&
+        (request.resource.data.userIds is list) &&
+        (spaceData.userIds.toSet().size() == spaceData.userIds.size()) &&
+        (request.resource.data.userIds.toSet().size() == request.resource.data.userIds.size()) &&
+        (spaceData.ownerId in spaceData.userIds) &&
+        (spaceData.ownerId in request.resource.data.userIds);
+    }
+
+    function isOwnerRemoval(spaceData, diff) {
+      return isSpaceActive(spaceData) &&
+        isSpaceOwner(spaceData) &&
+        diff.affectedKeys().hasOnly(['userIds', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['userIds']) &&
+        request.resource.data.userIds.size() == spaceData.userIds.size() - 1 &&
+        request.resource.data.userIds.removeAll(spaceData.userIds).size() == 0 &&
+        spaceData.userIds.removeAll(request.resource.data.userIds).size() == 1 &&
+        spaceData.userIds.removeAll(request.resource.data.userIds)[0] != spaceData.ownerId;
+    }
+
+    function isMemberDeparture(spaceData, diff) {
+      return isSpaceActive(spaceData) &&
+        isSpaceMember(spaceData) && !isSpaceOwner(spaceData) &&
+        diff.affectedKeys().hasOnly(['userIds', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['userIds']) &&
+        request.resource.data.userIds.size() == spaceData.userIds.size() - 1 &&
+        request.resource.data.userIds.removeAll(spaceData.userIds).size() == 0 &&
+        spaceData.userIds.removeAll(request.resource.data.userIds) == [request.auth.uid];
+    }
+
+    function isAddMember(spaceData, diff) {
+      return isSpaceActive(spaceData) &&
+        isSpaceContributor(spaceData) &&
+        diff.affectedKeys().hasOnly(['userIds', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['userIds']) &&
+        request.resource.data.userIds.size() == spaceData.userIds.size() + 1 &&
+        request.resource.data.userIds.removeAll(spaceData.userIds).size() == 1 &&
+        spaceData.userIds.removeAll(request.resource.data.userIds).size() == 0;
+    }
+
+    function isJoinPublic(spaceData, diff) {
+      return isSpaceActive(spaceData) &&
+        ('isPublic' in spaceData && spaceData.isPublic == true) &&
+        !isSpaceContributor(spaceData) &&
+        diff.affectedKeys().hasOnly(['userIds', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['userIds']) &&
+        request.resource.data.userIds.size() == spaceData.userIds.size() + 1 &&
+        request.resource.data.userIds.removeAll(spaceData.userIds) == [request.auth.uid] &&
+        spaceData.userIds.removeAll(request.resource.data.userIds).size() == 0;
+    }
+
+    function isRename(spaceData, diff) {
+      return isSpaceActive(spaceData) &&
+        isSpaceContributor(spaceData) &&
+        diff.affectedKeys().hasOnly(['name', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['name']) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0;
+    }
+
+    function isSoftDelete(spaceData, diff) {
+      return isSpaceActive(spaceData) &&
+        isSpaceOwner(spaceData) &&
+        diff.affectedKeys().hasOnly(['deletedAt', 'deletedBy', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['deletedAt', 'deletedBy']) &&
+        request.resource.data.deletedAt != null &&
+        request.resource.data.deletedBy == request.auth.uid;
+    }
+
+    function isRestore(spaceData, diff) {
+      return !isSpaceActive(spaceData) &&
+        isSpaceOwner(spaceData) &&
+        diff.affectedKeys().hasOnly(['deletedAt', 'deletedBy', 'updatedAt']) &&
+        diff.affectedKeys().hasAny(['deletedAt', 'deletedBy']) &&
+        request.resource.data.deletedAt == null &&
+        request.resource.data.deletedBy == null;
+    }
+
+    function isValidSpaceUpdate(spaceData) {
+      let diff = request.resource.data.diff(spaceData);
+      return retainsOwnership(spaceData) && (
+        isOwnerRemoval(spaceData, diff) ||
+        isMemberDeparture(spaceData, diff) ||
+        isAddMember(spaceData, diff) ||
+        isJoinPublic(spaceData, diff) ||
+        isRename(spaceData, diff) ||
+        isSoftDelete(spaceData, diff) ||
+        isRestore(spaceData, diff)
+      );
     }
 
     match /spaces/{spaceId} {
-      allow create: if isAuthenticated();
-      allow read: if isSpaceMember(resource.data);
-       allow update: if isAuthenticated() && (
-          (resource.data.isPublic == true) || // Allow anyone to update if public (specifically for joining)
-          request.auth.uid in resource.data.userIds || 
-          request.auth.uid == resource.data.ownerId
-      );
-      allow delete: if isAuthenticated() && (
-          request.auth.uid in resource.data.userIds || 
-          request.auth.uid == resource.data.ownerId
-      );
+      allow create: if isValidSpaceCreate();
+      allow read: if isSpaceReader(resource.data);
+      allow update: if isAuthenticated() && isValidSpaceUpdate(resource.data);
+      allow delete: if isAuthenticated() && isSpaceOwner(resource.data) && !isSpaceActive(resource.data);
     }
 
     match /documents/{documentId} {
-      // Allow create if user has access to the target space
-      allow create: if isAuthenticated() && canAccessSpace(request.resource.data.spaceId);
+      // Allow create if caller is a contributor of the target space
+      allow create: if isAuthenticated() &&
+        request.resource.data.spaceId is string &&
+        canContributeToSpace(request.resource.data.spaceId);
       
-      // Allow read/delete if user has access to the *existing* document's space
-      allow read, delete: if isAuthenticated() && canAccessSpace(resource.data.spaceId);
+      // Allow read if caller has read access to document's active space, or owner during cleanup
+      allow read: if isAuthenticated() && (
+        canReadSpace(resource.data.spaceId) ||
+        canCleanupDocument(resource.data.spaceId)
+      );
       
-      // Allow update if space access matches and spaceId is not changed
-      allow update: if isAuthenticated() && canAccessSpace(resource.data.spaceId) && request.resource.data.spaceId == resource.data.spaceId;
+      // Allow delete if caller is a contributor of an active space, or owner during cleanup
+      allow delete: if isAuthenticated() && (
+        canContributeToSpace(resource.data.spaceId) ||
+        canCleanupDocument(resource.data.spaceId)
+      );
+
+      // Allow update if caller is a contributor and spaceId is unchanged
+      allow update: if isAuthenticated() &&
+        request.resource.data.spaceId == resource.data.spaceId &&
+        canContributeToSpace(resource.data.spaceId);
+
       match /content/{contentId} {
-         allow read, write: if isAuthenticated() && canAccessSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId);
+         allow read: if isAuthenticated() && (
+           canReadSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId) ||
+           canCleanupDocument(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId)
+         );
+         allow create, update: if isAuthenticated() &&
+           canContributeToSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId);
+         allow delete: if isAuthenticated() && (
+           canContributeToSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId) ||
+           canCleanupDocument(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId)
+         );
       }
     }
 

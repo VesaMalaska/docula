@@ -55,6 +55,7 @@ export default function TrashbinPage() {
                     <>
                         <DeletedSpacesSection
                             deletedSpaces={deletedSpaces ?? []}
+                            currentUserId={user?.uid}
                             headerBackRef={headerBackRef}
                             mainRef={mainRef}
                         />
@@ -265,11 +266,12 @@ function TrashSpaceSection({
 
              <AlertDialog
                 isOpen={!!documentToDelete}
-                onClose={() => setDocumentToDelete(null)}
+                onClose={() => !isDeleting && setDocumentToDelete(null)}
                 title="Permanently Delete Document"
                 description="Are you sure you want to permanently delete this document? This action cannot be undone and will delete all attached images."
                 onAction={() => documentToDelete && removeForever(documentToDelete)}
                 variant="destructive"
+                isLoading={isDeleting}
                 actionLabel={isDeleting ? "Deleting..." : "Delete Forever"}
                 returnFocusRef={returnFocusRef}
                 actionReturnFocusRef={actionReturnFocusRef}
@@ -280,10 +282,12 @@ function TrashSpaceSection({
 
 function DeletedSpacesSection({
     deletedSpaces,
+    currentUserId,
     headerBackRef,
     mainRef,
 }: {
     deletedSpaces: Space[];
+    currentUserId?: string;
     headerBackRef: React.RefObject<HTMLAnchorElement | null>;
     mainRef: React.RefObject<HTMLDivElement | null>;
 }) {
@@ -367,11 +371,12 @@ function DeletedSpacesSection({
         return (
             <AlertDialog
                 isOpen={!!spaceToDelete}
-                onClose={() => setSpaceToDelete(null)}
+                onClose={() => !isDeleting && setSpaceToDelete(null)}
                 title="Permanently Delete Space"
                 description="Are you sure you want to permanently delete this space? This action cannot be undone and will delete all documents inside it."
                 onAction={() => spaceToDelete && removeForever(spaceToDelete)}
                 variant="destructive"
+                isLoading={isDeleting}
                 actionLabel={isDeleting ? "Deleting..." : "Delete Forever"}
                 returnFocusRef={returnFocusRef}
                 actionReturnFocusRef={actionReturnFocusRef}
@@ -382,62 +387,75 @@ function DeletedSpacesSection({
     return (
         <div className="space-y-4">
             <h2 className="text-xl font-semibold px-1">Deleted Spaces</h2>
-            {deletedSpaces.map((space) => (
-                <div
-                    key={space.id}
-                    ref={(el) => {
-                        if (el) rowRefs.current.set(space.id, el);
-                        else rowRefs.current.delete(space.id);
-                    }}
-                    tabIndex={-1}
-                    aria-label={`Deleted space: ${space.name}`}
-                    className="rounded-md border bg-card p-4 flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                    <div className="flex flex-col flex-1 min-w-0">
-                        <span className="font-medium text-lg truncate">{space.name}</span>
-                        <div className="text-sm text-muted-foreground flex gap-2">
-                            <span>Deleted {space.deletedAt ? format(space.deletedAt.toDate(), "MMM d, yyyy") : "-"}</span>
+            {deletedSpaces.map((space) => {
+                const isOwner = !!currentUserId && space.ownerId === currentUserId;
+
+                return (
+                    <div
+                        key={space.id}
+                        ref={(el) => {
+                            if (el) rowRefs.current.set(space.id, el);
+                            else rowRefs.current.delete(space.id);
+                        }}
+                        tabIndex={-1}
+                        aria-label={`Deleted space: ${space.name}`}
+                        className="rounded-md border bg-card p-4 flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                        <div className="flex flex-col flex-1 min-w-0">
+                            <span className="font-medium text-lg truncate">{space.name}</span>
+                            <div className="text-sm text-muted-foreground flex gap-2">
+                                <span>Deleted {space.deletedAt ? format(space.deletedAt.toDate(), "MMM d, yyyy") : "-"}</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {isOwner ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onPointerDown={() => { isPointerRestoreRef.current = true; }}
+                                        onKeyDown={() => { isPointerRestoreRef.current = false; }}
+                                        onClick={() => handleRestoreClick(space.id)}
+                                        disabled={isRestoring || isDeleting}
+                                        className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        title="Restore Space"
+                                        aria-label={`Restore Space ${space.name}`}
+                                    >
+                                        <RefreshCw className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        ref={(el) => {
+                                            if (el) triggerRefs.current.set(space.id, el);
+                                            else triggerRefs.current.delete(space.id);
+                                        }}
+                                        onClick={() => handleDeleteClick(space)}
+                                        disabled={isRestoring || isDeleting}
+                                        className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        title="Delete permanently"
+                                        aria-label={`Delete Space ${space.name} permanently`}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </button>
+                                </>
+                            ) : (
+                                <span className="text-xs text-muted-foreground italic px-2">
+                                    Owner only
+                                </span>
+                            )}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        <button
-                            type="button"
-                            onPointerDown={() => { isPointerRestoreRef.current = true; }}
-                            onKeyDown={() => { isPointerRestoreRef.current = false; }}
-                            onClick={() => handleRestoreClick(space.id)}
-                            disabled={isRestoring || isDeleting}
-                            className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            title="Restore Space"
-                            aria-label={`Restore Space ${space.name}`}
-                        >
-                            <RefreshCw className="h-4 w-4" />
-                        </button>
-                        <button
-                            type="button"
-                            ref={(el) => {
-                                if (el) triggerRefs.current.set(space.id, el);
-                                else triggerRefs.current.delete(space.id);
-                            }}
-                            onClick={() => handleDeleteClick(space)}
-                            disabled={isRestoring || isDeleting}
-                            className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            title="Delete permanently"
-                            aria-label={`Delete Space ${space.name} permanently`}
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </button>
-                    </div>
-                </div>
-            ))}
+                );
+            })}
             <div className="h-px bg-border my-6" />
 
             <AlertDialog
                 isOpen={!!spaceToDelete}
-                onClose={() => setSpaceToDelete(null)}
+                onClose={() => !isDeleting && setSpaceToDelete(null)}
                 title="Permanently Delete Space"
                 description="Are you sure you want to permanently delete this space? This action cannot be undone and will delete all documents inside it."
                 onAction={() => spaceToDelete && removeForever(spaceToDelete)}
                 variant="destructive"
+                isLoading={isDeleting}
                 actionLabel={isDeleting ? "Deleting..." : "Delete Forever"}
                 returnFocusRef={returnFocusRef}
                 actionReturnFocusRef={actionReturnFocusRef}
