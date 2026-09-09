@@ -23,9 +23,9 @@ export function Breadcrumbs({ spaceId, documentId, title }: BreadcrumbsProps) {
     if (!tree) return [];
 
     const findPath = (
-      targetId: string, 
-      nodes: SidebarNode[], 
-      currentPath: { id: string; title: string }[]
+      targetId: string,
+      nodes: SidebarNode[],
+      currentPath: { id: string; title: string }[],
     ): { id: string; title: string }[] | null => {
       for (const node of nodes) {
         if (node.id === targetId) {
@@ -46,9 +46,9 @@ export function Breadcrumbs({ spaceId, documentId, title }: BreadcrumbsProps) {
   }, [documentId, tree]);
 
   return (
-    <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-4 overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
-      <Link 
-        href="/" 
+    <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-4 overflow-x-auto whitespace-nowrap pb-2 pt-4 md:pt-8 scrollbar-hide">
+      <Link
+        href="/"
         className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
       >
         <Home className="h-3.5 w-3.5" />
@@ -58,7 +58,7 @@ export function Breadcrumbs({ spaceId, documentId, title }: BreadcrumbsProps) {
       {breadcrumbs.map((item) => (
         <div key={item.id} className="flex items-center gap-1">
           <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-          <Link 
+          <Link
             href={`/space/${spaceId}/doc/${item.id}`}
             className="hover:text-foreground transition-colors truncate max-w-[150px] cursor-pointer"
           >

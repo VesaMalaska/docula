@@ -1,24 +1,32 @@
 "use client";
 
-import { useAuth } from "@/components/providers/auth-provider";
 import { Menu } from "lucide-react";
 import { UserButton } from "./user-button";
 import { cn } from "@/lib/utils";
 
 interface HeaderProps {
-  onMenuClick: () => void;
+  onMenuClick?: () => void;
   className?: string;
+  menuButtonRef?: React.RefObject<HTMLButtonElement | null>;
+  isSidebarOpen?: boolean;
 }
 
-export function Header({ onMenuClick, className }: HeaderProps) {
-  const { user, logout } = useAuth();
-
+export function Header({
+  onMenuClick,
+  className,
+  menuButtonRef,
+  isSidebarOpen = false,
+}: HeaderProps) {
   return (
     <header className={cn("flex h-14 items-center justify-between border-b border-border bg-background px-4 shrink-0", className)}>
       <div className="flex items-center gap-2">
         <button
+          ref={menuButtonRef}
+          type="button"
+          aria-label="Open sidebar"
+          aria-expanded={isSidebarOpen}
           onClick={onMenuClick}
-          className="p-2 -ml-2 text-muted-foreground hover:text-foreground lg:hidden cursor-pointer"
+          className="p-2 -ml-2 text-muted-foreground hover:text-foreground lg:hidden cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Menu className="h-6 w-6" />
         </button>

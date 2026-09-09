@@ -12,13 +12,26 @@ import {
   query,
   orderBy,
   where,
-  deleteDoc
+  deleteDoc,
+  writeBatch,
+  DocumentSnapshot
 } from "firebase/firestore";
 import { Document, SidebarNode } from "@/lib/types";
 import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
+import { calculateNewPath, calculateDescendantPath, calculateSubtreeHeightFromPaths } from "../utils/hierarchy";
 
-export async function createDocument(spaceId: string, parentId: string | null = null) {
+export interface CreateDocumentOptions {
+  title?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content?: any;
+}
+
+export async function createDocument(
+  spaceId: string, 
+  parentId: string | null = null,
+  options?: CreateDocumentOptions
+) {
   let path: string[] = [];
   
   if (parentId) {
@@ -30,23 +43,27 @@ export async function createDocument(spaceId: string, parentId: string | null = 
     }
   }
 
+  const title = options?.title || "Untitled";
+  const content = options?.content ?? null;
+  const outboundLinks = content ? extractLinks(content) : [];
+
   const newDoc = {
     spaceId,
-    title: "Untitled",
+    title,
     parentId,
     path, 
     tags: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     lock: null,
-    outboundLinks: [],
+    outboundLinks,
     backlinks: [],
     deleted: false,
   };
 
   const docRef = await addDoc(collection(db, "documents"), newDoc);
   const contentRef = doc(db, "documents", docRef.id, "content", "main");
-  await setDoc(contentRef, { content: null });
+  await setDoc(contentRef, { content });
   return docRef.id;
 }
 
@@ -154,7 +171,7 @@ export async function updateDocument(id: string, data: Partial<Document>) {
           
           // Pre-fetch all targets to ensure we read everything before any write
           const allTargetIds = [...new Set([...added, ...removed])];
-          const targetSnaps: Record<string, any> = {};
+          const targetSnaps: Record<string, DocumentSnapshot> = {};
           
           for (const targetId of allTargetIds) {
              const targetRef = doc(db, "documents", targetId);
@@ -284,9 +301,17 @@ export async function permanentlyDeleteDocument(id: string) {
     
     if (docSnap.exists()) {
         const data = docSnap.data();
-        // Permanently delete images from "deleted/" folder
-        if (data.content) {
-            const imageUrls = extractImageUrls(data.content);
+        // 1. Discover content (either from subcollection /content/main or inline legacy)
+        let content = data.content;
+        const contentRef = doc(db, "documents", id, "content", "main");
+        const contentSnap = await getDoc(contentRef);
+        if (contentSnap.exists()) {
+            content = contentSnap.data()?.content ?? content;
+        }
+
+        // 2. Permanently delete images from "deleted/" folder
+        if (content) {
+            const imageUrls = extractImageUrls(content);
             if (imageUrls.length > 0) {
                 // We need to construct the keys that are in the deleted/ folder
                 // The softDeleteImages moved them to deleted/ prefix
@@ -295,11 +320,27 @@ export async function permanentlyDeleteDocument(id: string) {
                 await permanentDeleteImages(imageUrls);
             }
         }
+
+        // 3. Delete content subcollection document if present
+        if (contentSnap.exists()) {
+            await deleteDoc(contentRef);
+        }
+
+        // 4. Delete root document record
         await deleteDoc(docRef);
     }
 }
 
 export async function getSidebarTree(spaceId: string): Promise<SidebarNode[]> {
+  try {
+    const spaceSnap = await getDoc(doc(db, "spaces", spaceId));
+    if (!spaceSnap.exists() || spaceSnap.data()?.deletedAt) {
+      return [];
+    }
+  } catch {
+    return [];
+  }
+
   const q = query(
       collection(db, "documents"), 
       where("spaceId", "==", spaceId),
@@ -401,4 +442,106 @@ export async function searchDocuments(queryText: string, spaceId: string): Promi
     console.error("Error searching documents:", error);
     return [];
   }
+}
+
+export async function moveDocument(id: string, newParentId: string | null) {
+  const docRef = doc(db, "documents", id);
+  const docSnap = await getDoc(docRef);
+
+  if (!docSnap.exists()) {
+    throw new Error("Document not found");
+  }
+
+  const docData = docSnap.data();
+  const spaceId = docData.spaceId;
+
+  // No-op check
+  if (docData.parentId === newParentId) {
+    return; // Already in the requested location
+  }
+
+  // Prevent self-move
+  if (id === newParentId) {
+    throw new Error("Cannot move a document under itself");
+  }
+
+  let newPath: string[] = [];
+  let destinationDepth = 0;
+  
+  if (newParentId) {
+    const parentRef = doc(db, "documents", newParentId);
+    const parentSnap = await getDoc(parentRef);
+    
+    if (!parentSnap.exists()) {
+      throw new Error("Destination parent not found");
+    }
+    
+    const parentData = parentSnap.data();
+
+    if (parentData.deleted) {
+      throw new Error("Destination parent not found");
+    }
+    
+    // Validate same space
+    if (parentData.spaceId !== spaceId) {
+      throw new Error("Cannot move document to a different space");
+    }
+
+    // Prevent cycle (moving under a descendant)
+    if ((parentData.path || []).includes(id)) {
+      throw new Error("Cannot move a document under its own descendant");
+    }
+    
+    destinationDepth = (parentData.path?.length || 0) + 1;
+    newPath = calculateNewPath(parentData.path, newParentId);
+  }
+
+  // Find all descendants
+  const descendantsQuery = query(
+    collection(db, "documents"),
+    where("spaceId", "==", spaceId),
+    where("path", "array-contains", id)
+  );
+  
+  const descendantsSnap = await getDocs(descendantsQuery);
+
+  // Validate 4-level hierarchy depth invariant: destination depth + moved subtree height <= 4
+  const descendantPaths = descendantsSnap.docs.map((d) => d.data().path || []);
+  const subtreeHeight = calculateSubtreeHeightFromPaths(id, descendantPaths);
+
+  if (destinationDepth + subtreeHeight > 4) {
+    throw new Error("Moving this document exceeds the maximum hierarchy depth of 4 levels");
+  }
+  
+  // Use a single batch for atomicity. If limit (500) exceeded, it will fail safely.
+  const batch = writeBatch(db);
+  
+  if (descendantsSnap.docs.length + 1 > 500) {
+     throw new Error("Move operation exceeds batch limits (500 docs). Too many descendants.");
+  }
+  
+  // Update the moved document
+  batch.update(docRef, {
+    parentId: newParentId,
+    path: newPath,
+    updatedAt: serverTimestamp()
+  });
+
+  // Update descendants
+  descendantsSnap.docs.forEach((descendantDoc) => {
+    const descendantData = descendantDoc.data();
+    const oldPath = descendantData.path || [];
+    const index = oldPath.indexOf(id);
+    
+    if (index !== -1) {
+      const descendantNewPath = calculateDescendantPath(oldPath, id, newPath);
+      
+      batch.update(descendantDoc.ref, {
+        path: descendantNewPath,
+        updatedAt: serverTimestamp()
+      });
+    }
+  });
+
+  await batch.commit();
 }

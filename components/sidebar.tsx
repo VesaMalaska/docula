@@ -1,22 +1,28 @@
 "use client";
 
 
-import { Plus, Loader2, X, Trash2, LayoutGrid, Globe, Lock, ChevronRight, ChevronDown, MoreHorizontal, Settings } from "lucide-react";
+import { Plus, Loader2, X, Trash2, Globe, Lock, MoreHorizontal, Pencil, Upload, LogOut } from "lucide-react";
 import { SidebarTree } from "./sidebar-tree";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace } from "@/lib/actions/spaces";
+import { createSpace, getSpacesForUser, getPublicSpaces, joinSpace, deleteSpace, leaveSpace } from "@/lib/actions/spaces";
+import { resolveLeaveSpaceError, resolveJoinSpaceError, evictSpaceQueries } from "@/lib/member-management";
+import { RenameSpaceDialog } from "@/components/rename-space-dialog";
+import { ImportMarkdownDialog } from "@/components/import-markdown-dialog";
+import { Space } from "@/lib/types";
 import { createDocument } from "@/lib/actions/document";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { calculateListFallback } from "@/lib/focus-fallback";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
+    DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
     Dialog,
@@ -38,6 +44,7 @@ function PublicSpaceList({ onClose }: { onClose: () => void }) {
     const { user } = useAuth();
     const router = useRouter();
     const queryClient = useQueryClient();
+    const { toast } = useToast();
 
     const { data: spaces, isLoading } = useQuery({
         queryKey: ["public-spaces"],
@@ -57,8 +64,12 @@ function PublicSpaceList({ onClose }: { onClose: () => void }) {
             router.push(`/space/${spaceId}`);
         },
         onError: (error) => {
-            console.error("Failed to join space:", error);
-            // Optionally add a toast notification here
+            const resolved = resolveJoinSpaceError(error);
+            toast({
+                title: "Error joining space",
+                description: resolved.message,
+                variant: "destructive",
+            });
         }
     });
 
@@ -94,10 +105,11 @@ function PublicSpaceList({ onClose }: { onClose: () => void }) {
 
 
 interface SidebarProps {
-  onClose?: () => void;
+  onClose?: (options?: { returnFocus?: boolean }) => void;
+  closeButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
-export function Sidebar({ onClose }: SidebarProps) {
+export function Sidebar({ onClose, closeButtonRef }: SidebarProps) {
   const { user } = useAuth();
   const router = useRouter();
   const params = useParams();
@@ -110,6 +122,19 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceIsPublic, setNewSpaceIsPublic] = useState(false);
   const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
+  const [spaceToRename, setSpaceToRename] = useState<Space | null>(null);
+  const [spaceToImport, setSpaceToImport] = useState<Space | null>(null);
+  const [spaceToLeave, setSpaceToLeave] = useState<Space | null>(null);
+  const pendingDialogAction = useRef<{ action: "rename" | "import" | "delete" | "leave"; space: Space } | null>(null);
+  const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const spaceLinkRefs = useRef<Map<string, HTMLAnchorElement>>(new Map());
+  const addSpaceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const renameReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const importReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const deleteReturnFocusRef = useRef<HTMLElement | null>(null);
+  const deleteActionReturnFocusRef = useRef<HTMLElement | null>(null);
+  const leaveReturnFocusRef = useRef<HTMLElement | null>(null);
+  const leaveActionReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Fetch User Spaces
   const { data: spaces, isLoading: isLoadingSpaces } = useQuery({
@@ -135,7 +160,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const { mutate: deleteSpc, isPending: isDeletingSpace } = useMutation({
       mutationFn: async (id: string) => {
           if (!user) return;
-          await deleteSpace(id, user.uid);
+          await deleteSpace(id);
       },
       onSuccess: (_, deletedSpaceId) => {
           queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
@@ -151,13 +176,39 @@ export function Sidebar({ onClose }: SidebarProps) {
       }
   });
 
+  const { mutate: leaveSpc, isPending: isLeavingSpace } = useMutation({
+      mutationFn: async (targetSpace: Space) => {
+          await leaveSpace(targetSpace.id);
+      },
+      onSuccess: (_, targetSpace) => {
+          evictSpaceQueries(queryClient, targetSpace.id);
+          setSpaceToLeave(null);
+          toast({
+              title: "Left space",
+              description: `You have left ${targetSpace.name}.`,
+          });
+          if (spaceId && targetSpace.id === spaceId) {
+             router.push("/");
+          }
+      },
+      onError: (err) => {
+          const resolved = resolveLeaveSpaceError(err);
+          toast({
+              title: "Error leaving space",
+              description: resolved.message,
+              variant: "destructive",
+          });
+          setSpaceToLeave(null);
+      }
+  });
+
 
   const { mutate: createDoc, isPending } = useMutation({
     mutationFn: () => createDocument(spaceId, null),
     onSuccess: (newDocId) => {
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
       router.push(`/space/${spaceId}/doc/${newDocId}?edit=true`);
-      onClose?.();
+      onClose?.({ returnFocus: false });
     },
   });
 
@@ -169,8 +220,10 @@ export function Sidebar({ onClose }: SidebarProps) {
              <Dialog open={isCreateSpaceOpen} onOpenChange={setIsCreateSpaceOpen}>
                 <DialogTrigger asChild>
                     <button
+                        ref={addSpaceButtonRef}
                         className="rounded p-1 hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer"
                         title="Add Space"
+                        aria-label="Add Space"
                     >
                         <Plus className="h-5 w-5" />
                     </button>
@@ -222,7 +275,9 @@ export function Sidebar({ onClose }: SidebarProps) {
             </Dialog>
 
             <button
-                onClick={onClose}
+                ref={closeButtonRef}
+                onClick={() => onClose?.({ returnFocus: true })}
+                aria-label="Close sidebar"
                 className="p-1 lg:hidden text-muted-foreground hover:text-foreground cursor-pointer"
             >
                 <X className="h-5 w-5" />
@@ -232,7 +287,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
       <div className="flex-1 overflow-y-auto py-4" onClick={(e) => {
           if ((e.target as HTMLElement).closest('a')) {
-              onClose?.();
+              onClose?.({ returnFocus: false });
           }
       }}>
         {isLoadingSpaces ? (
@@ -249,7 +304,14 @@ export function Sidebar({ onClose }: SidebarProps) {
                                  "group flex items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                  isSpaceActive ? "bg-accent text-accent-foreground" : "text-muted-foreground"
                              )}>
-                                <Link href={`/space/${space.id}`} className="flex-1 flex items-center gap-2 truncate">
+                                <Link
+                                    ref={(el) => {
+                                        if (el) spaceLinkRefs.current.set(space.id, el);
+                                        else spaceLinkRefs.current.delete(space.id);
+                                    }}
+                                    href={`/space/${space.id}`}
+                                    className="flex-1 flex items-center gap-2 truncate"
+                                >
                                     {space.isPublic ? <Globe className="h-4 w-4"/> : <Lock className="h-4 w-4"/>}
                                     <span className="truncate">{space.name}</span>
                                 </Link>
@@ -260,31 +322,118 @@ export function Sidebar({ onClose }: SidebarProps) {
                                             onClick={() => createDoc()}
                                             disabled={isPending}
                                             className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
-                                            title="New Document"
+                                            title="Add document"
+                                            aria-label={`Add document to ${space.name}`}
                                         >
                                             {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Plus className="h-3.5 w-3.5"/>}
                                         </button>
                                          <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <button 
-                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer"
+                                                    type="button"
+                                                    ref={(el) => {
+                                                        if (el) triggerRefs.current.set(space.id, el);
+                                                        else triggerRefs.current.delete(space.id);
+                                                    }}
+                                                    className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-background cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                                     title="Space Settings"
+                                                    aria-label="Space actions"
                                                 >
                                                     <MoreHorizontal className="h-3.5 w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-40">
-                                                <DropdownMenuItem 
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSpaceToDelete(space.id);
-                                                    }}
-                                                    className="text-destructive focus:text-destructive cursor-pointer"
-                                                >
-                                                    <Trash2 className="mr-2 h-4 w-4" />
-                                                    <span>Delete Space</span>
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
+                                             <DropdownMenuContent
+                                                 align="end"
+                                                 className="w-56"
+                                                 onCloseAutoFocus={(e) => {
+                                                     const pendingAction = pendingDialogAction.current;
+                                                     if (pendingAction) {
+                                                         pendingDialogAction.current = null;
+                                                         const { action, space: targetSpace } = pendingAction;
+
+                                                         const trigger = triggerRefs.current.get(targetSpace.id);
+                                                         if (trigger && trigger.isConnected) {
+                                                             e.preventDefault();
+                                                             trigger.focus();
+                                                             if (action === "rename") {
+                                                                 renameReturnFocusRef.current = trigger;
+                                                             } else if (action === "import") {
+                                                                 importReturnFocusRef.current = trigger;
+                                                             } else if (action === "delete") {
+                                                                 deleteReturnFocusRef.current = trigger;
+                                                             } else if (action === "leave") {
+                                                                 leaveReturnFocusRef.current = trigger;
+                                                             }
+                                                         }
+
+                                                         if (action === "delete" || action === "leave") {
+                                                             const fallbackResult = calculateListFallback(spaces || [], targetSpace.id);
+                                                             let fallbackEl: HTMLElement | null = null;
+                                                             if (fallbackResult.type === "item") {
+                                                                 fallbackEl = spaceLinkRefs.current.get(fallbackResult.id) || triggerRefs.current.get(fallbackResult.id) || null;
+                                                             }
+                                                             if (!fallbackEl || !fallbackEl.isConnected) {
+                                                                 fallbackEl = addSpaceButtonRef.current;
+                                                             }
+                                                             if (action === "delete") {
+                                                                 deleteActionReturnFocusRef.current = fallbackEl;
+                                                             } else {
+                                                                 leaveActionReturnFocusRef.current = fallbackEl;
+                                                             }
+                                                         }
+
+                                                         if (action === "rename") setSpaceToRename(targetSpace);
+                                                         else if (action === "import") setSpaceToImport(targetSpace);
+                                                         else if (action === "delete") setSpaceToDelete(targetSpace.id);
+                                                         else if (action === "leave") setSpaceToLeave(targetSpace);
+                                                     }
+                                                 }}
+                                             >
+                                                 <DropdownMenuItem 
+                                                     onSelect={(e) => {
+                                                         e.stopPropagation();
+                                                         pendingDialogAction.current = { action: "rename", space };
+                                                     }}
+                                                     className="cursor-pointer"
+                                                 >
+                                                     <Pencil className="mr-2 h-4 w-4" />
+                                                     <span>Rename Space</span>
+                                                 </DropdownMenuItem>
+                                                 <DropdownMenuItem 
+                                                     onSelect={(e) => {
+                                                         e.stopPropagation();
+                                                         pendingDialogAction.current = { action: "import", space };
+                                                     }}
+                                                     className="cursor-pointer"
+                                                 >
+                                                     <Upload className="mr-2 h-4 w-4" />
+                                                     <span>Import Markdown document…</span>
+                                                 </DropdownMenuItem>
+                                                 <DropdownMenuSeparator />
+                                                 {space.ownerId === user?.uid ? (
+                                                     <DropdownMenuItem
+                                                         onSelect={(e) => {
+                                                             e.stopPropagation();
+                                                             pendingDialogAction.current = { action: "delete", space };
+                                                         }}
+                                                         className="text-destructive focus:text-destructive cursor-pointer"
+                                                     >
+                                                         <Trash2 className="mr-2 h-4 w-4" />
+                                                         <span>Delete Space</span>
+                                                     </DropdownMenuItem>
+                                                 ) : (
+                                                     <DropdownMenuItem
+                                                         onSelect={(e) => {
+                                                             e.stopPropagation();
+                                                             pendingDialogAction.current = { action: "leave", space };
+                                                         }}
+                                                         className="text-destructive focus:text-destructive cursor-pointer"
+                                                     >
+                                                         <LogOut className="mr-2 h-4 w-4" />
+                                                         <span>Leave Space</span>
+                                                     </DropdownMenuItem>
+                                                 )}
+                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>
                                 )}
@@ -293,7 +442,14 @@ export function Sidebar({ onClose }: SidebarProps) {
                              {/* Only show tree if space is active */}
                              {isSpaceActive && (
                                  <div className="pl-2 border-l border-border/50 ml-2">
-                                     <SidebarTree spaceId={space.id} />
+                                     <SidebarTree
+                                         spaceId={space.id}
+                                         spaceControlRef={{
+                                             get current() {
+                                                 return spaceLinkRefs.current.get(space.id) || triggerRefs.current.get(space.id) || addSpaceButtonRef.current;
+                                             }
+                                         }}
+                                     />
                                  </div>
                              )}
                         </div>
@@ -314,7 +470,7 @@ export function Sidebar({ onClose }: SidebarProps) {
              <Link 
                 href="/trash"
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer translation-colors"
-                onClick={onClose}
+                onClick={() => onClose?.({ returnFocus: false })}
              >
                 <Trash2 className="h-4 w-4" />
                 Trashbin
@@ -322,15 +478,65 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
       </div>
       
-       <AlertDialog
-            isOpen={!!spaceToDelete}
-            onClose={() => setSpaceToDelete(null)}
-            title="Delete Space"
-            description="Are you sure you want to delete this space? You can restore it from the trashbin later."
-            onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
-            variant="destructive"
-            actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
-        />
+       {spaceToDelete && (
+            <AlertDialog
+                isOpen={!!spaceToDelete}
+                onClose={() => !isDeletingSpace && setSpaceToDelete(null)}
+                title="Delete Space"
+                description="Are you sure you want to delete this space? You can restore it from the trashbin later."
+                onAction={() => spaceToDelete && deleteSpc(spaceToDelete)}
+                variant="destructive"
+                isLoading={isDeletingSpace}
+                actionLabel={isDeletingSpace ? "Deleting..." : "Delete Space"}
+                returnFocusRef={deleteReturnFocusRef}
+                actionReturnFocusRef={deleteActionReturnFocusRef}
+            />
+        )}
+
+        {spaceToLeave && (
+            <AlertDialog
+                isOpen={!!spaceToLeave}
+                onClose={() => !isLeavingSpace && setSpaceToLeave(null)}
+                title="Leave Space"
+                description={
+                    spaceToLeave.isPublic
+                        ? `Are you sure you want to leave ${spaceToLeave.name}? You will lose contributor access, but you can continue to view this public space and re-join at any time. Your previous contributions will remain intact.`
+                        : `Are you sure you want to leave ${spaceToLeave.name}? You will lose access to this private space and its documents. Your previous contributions will remain intact.`
+                }
+                onAction={() => spaceToLeave && leaveSpc(spaceToLeave)}
+                variant="destructive"
+                isLoading={isLeavingSpace}
+                actionLabel={isLeavingSpace ? "Leaving..." : "Leave Space"}
+                returnFocusRef={leaveReturnFocusRef}
+                actionReturnFocusRef={leaveActionReturnFocusRef}
+            />
+        )}
+
+       {spaceToRename && (
+            <RenameSpaceDialog
+                space={spaceToRename}
+                open={!!spaceToRename}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setSpaceToRename(null);
+                    }
+                }}
+                returnFocusRef={renameReturnFocusRef}
+            />
+        )}
+
+       {spaceToImport && (
+            <ImportMarkdownDialog
+                isOpen={!!spaceToImport}
+                onClose={() => setSpaceToImport(null)}
+                spaceId={spaceToImport.id}
+                parentId={null}
+                destinationName={spaceToImport.name}
+                isSpaceRoot={true}
+                onSuccess={() => onClose?.({ returnFocus: false })}
+                returnFocusRef={importReturnFocusRef}
+            />
+        )}
     </aside>
   );
 }
