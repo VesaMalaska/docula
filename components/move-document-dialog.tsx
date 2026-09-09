@@ -145,18 +145,19 @@ export function MoveDocumentDialog({
   );
 
   const handleCloseAutoFocus = (event: Event) => {
-    if (isMoveSuccessfulRef.current) {
+    if (isMoveSuccessfulRef.current && containerRef?.current) {
       isMoveSuccessfulRef.current = false;
       if (returnFocusRef) {
         returnFocusRef.current = null;
       }
       event.preventDefault();
-      const interimTarget = containerRef?.current;
-      if (interimTarget && interimTarget.isConnected) {
+      const interimTarget = containerRef.current;
+      if (interimTarget.isConnected) {
         interimTarget.focus({ preventScroll: true });
       }
       return;
     }
+    isMoveSuccessfulRef.current = false;
 
     const target = returnFocusRef?.current;
     const isPointer = isPointerInteractionRef.current;
@@ -328,7 +329,7 @@ export function MoveDocumentDialog({
     },
     onSuccess: () => {
       isMoveSuccessfulRef.current = true;
-      if (returnFocusRef) {
+      if (containerRef && returnFocusRef) {
         returnFocusRef.current = null;
       }
       toast({ title: "Document moved successfully" });
