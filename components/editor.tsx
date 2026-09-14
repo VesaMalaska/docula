@@ -40,6 +40,10 @@ import {
 import { cn } from "@/lib/utils";
 import { getPresignedUrl, getPresignedGetUrl } from "@/lib/actions/s3";
 import { optimizeImage } from "@/lib/image-optimization";
+import {
+  handleClientUploadError,
+  GENERIC_UPLOAD_ERROR_MESSAGE,
+} from "@/lib/image-upload-error";
 import { AlertDialog } from "./ui/alert-dialog";
 
 interface EditorProps {
@@ -47,6 +51,7 @@ interface EditorProps {
   content: any;
   editable: boolean;
   spaceId: string;
+  docId: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange?: (content: any) => void;
   onImageUpload?: (url: string) => void;
@@ -57,6 +62,7 @@ export function Editor({
   content,
   editable,
   spaceId,
+  docId,
   onChange,
   onImageUpload,
   isScrolled = false,
@@ -136,87 +142,80 @@ export function Editor({
   const addImage = async () => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*";
+    input.accept = "image/jpeg,image/png,image/gif,image/webp";
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
 
+      const ALLOWED_IMAGE_TYPES = [
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+      ];
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        handleClientUploadError("UNSUPPORTED_IMAGE_TYPE", showAlert);
+        return;
+      }
+
+      if (file.size > 5242880) {
+        handleClientUploadError("FILE_TOO_LARGE", showAlert);
+        return;
+      }
+
       setIsUploading(true);
       try {
-        // Optimize image before upload
         const optimizedFile = await optimizeImage(file);
 
+        const { auth } = await import("@/lib/firebase");
+        const idToken = await auth.currentUser?.getIdToken();
+
         const presigned = await getPresignedUrl(
-          optimizedFile.name,
+          idToken,
+          spaceId,
+          docId,
           optimizedFile.type,
+          file.type,
         );
         if (!presigned) {
-          showAlert(
-            "Configuration Error",
-            "Failed to get upload URL. Check AWS config.",
-          );
+          showAlert("Upload Failed", GENERIC_UPLOAD_ERROR_MESSAGE);
           return;
         }
 
-        const { url, key } = presigned;
+        const { url, key, fields } = presigned;
 
         try {
+          const formData = new FormData();
+          Object.entries(fields).forEach(([k, v]) => {
+              formData.append(k, v as string);
+          });
+          formData.append("file", optimizedFile);
+
           const uploadRes = await fetch(url, {
-            method: "PUT",
-            body: optimizedFile,
-            headers: {
-              "Content-Type": optimizedFile.type,
-            },
+            method: "POST",
+            body: formData,
           });
 
           if (!uploadRes.ok) {
             throw new Error(`Upload failed with status: ${uploadRes.status}`);
           }
-        } catch (uploadError) {
-          console.error("S3 Upload Error:", uploadError);
-          showAlert(
-            "Upload Failed",
-            "Check console for CORS or Network errors.",
-          );
+        } catch {
+          showAlert("Upload Failed", GENERIC_UPLOAD_ERROR_MESSAGE);
           return;
         }
 
         if (!key) {
-          console.error("No key returned from presigned URL");
+          showAlert("Upload Failed", GENERIC_UPLOAD_ERROR_MESSAGE);
           return;
         }
 
-        // Get a signed URL for reading the image we just uploaded
-        const signedUrl = await getPresignedGetUrl(key);
+        const signedUrl = await getPresignedGetUrl(idToken, spaceId, docId, key);
         if (signedUrl) {
           editor?.chain().focus().setImage({ src: signedUrl }).run();
-          // Pass the signed URL to the parent, but the parent should strip params before saving
-          // actually onImageUpload is used to track session images to permanentize/delete
-          // The permanentize logic expects the url that includes "temp/"
-          // The signedUrl includes "temp/" in the path, so it's fine.
           onImageUpload?.(signedUrl);
         }
       } catch (e) {
-        if (e instanceof Error) {
-          if (
-            e.message === "NOT_AN_IMAGE" ||
-            e.message === "Failed to load image"
-          ) {
-            showAlert(
-              "Invalid Image",
-              "Please upload a valid image file (JPEG, PNG, WebP, etc.).",
-            );
-          } else {
-            console.error(e);
-            showAlert("Upload Error", e.message);
-          }
-        } else {
-          console.error(e);
-          showAlert(
-            "Upload Error",
-            "An unexpected error occurred during upload.",
-          );
-        }
+        handleClientUploadError(e, showAlert);
       } finally {
         setIsUploading(false);
       }

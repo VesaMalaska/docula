@@ -3,10 +3,21 @@
  * 1. Resizes the image if its width exceeds 1024px, maintaining aspect ratio.
  * 2. Converts the image to WebP format.
  */
+export const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+];
+
 export async function optimizeImage(file: File): Promise<File> {
   // Initial check based on MIME type
   if (!file.type.startsWith('image/')) {
     throw new Error('NOT_AN_IMAGE');
+  }
+
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    throw new Error('UNSUPPORTED_IMAGE_TYPE');
   }
 
   return new Promise((resolve, reject) => {

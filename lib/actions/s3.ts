@@ -1,7 +1,10 @@
 "use server";
 
-import { S3Client, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, CopyObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
+import { verifyIdToken, authorizeSpaceContributor, authorizeSpaceReader, getAndVerifyDocument, extractCanonicalKey, verifyLegacyKeyOwnership, authorizeDocumentCleanup } from "../server/document-authorization";
+import crypto from "crypto";
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",
@@ -11,278 +14,335 @@ const s3Client = new S3Client({
   },
 });
 
-export async function getPresignedGetUrl(key: string) {
-  const bucket = process.env.AWS_BUCKET_NAME;
-  if (!bucket) return null;
-
-  const command = new GetObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  });
-
-  try {
-    const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
-    return url;
-  } catch (error) {
-    console.error("Error getting presigned GET URL", error);
-    return null;
-  }
-}
-
-
-export async function getPresignedUrl(fileName: string, fileType: string) {
-  const bucket = process.env.AWS_BUCKET_NAME;
-  if (!bucket) {
-      console.warn("AWS_BUCKET_NAME is not defined");
-      return null;
-  }
-  
-  const command = new PutObjectCommand({
-    Bucket: bucket,
-    Key: `temp/${Date.now()}-${fileName}`,
-    ContentType: fileType,
-    // ACL removed for private bucket security
-  });
-
-  try {
-    const url = await getSignedUrl(s3Client, command, { expiresIn: 60 });
-    return { url, key: command.input.Key };
-  } catch (error) {
-    console.error("Error getting presigned URL", error);
-    return null;
-  }
-}
-
-export async function permanentizeImages(urls: string[]) {
-    if (!urls || urls.length === 0) return {};
+const getBucket = () => {
     const bucket = process.env.AWS_BUCKET_NAME;
-    if (!bucket) {
-        console.warn("AWS_BUCKET_NAME is not defined");
-        return {};
+    if (!bucket) throw new Error("AWS_BUCKET_NAME is not configured");
+    return bucket;
+};
+
+// Map of allowed MIME types to their extensions
+const ALLOWED_MIME_TYPES: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+};
+
+export async function getPresignedGetUrl(idToken: string | undefined, spaceId: string, docId: string, key: string) {
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
+
+    // Authorization: Must be an active space reader
+    await authorizeSpaceReader(uid, spaceId);
+
+    // Verification: Must be the correct document, and the key must belong to this document
+    await getAndVerifyDocument(spaceId, docId);
+
+    const normalizedKey = key.startsWith('/') ? key.substring(1) : key;
+
+    // If it's a temporary key belonging to THIS caller, they can view it before saving.
+    // If it's a legacy or uploaded key, it must exist in the document content.
+    const isTemp = normalizedKey.startsWith("temp/");
+    if (isTemp) {
+        // temp/{spaceId}/{docId}/{uid}/{uuid}.ext
+        const expectedPrefix = `temp/${spaceId}/${docId}/${uid}/`;
+        if (!normalizedKey.startsWith(expectedPrefix)) {
+            throw new Error("Permission denied: unowned temporary key");
+        }
+    } else {
+        const ownsKey = await verifyLegacyKeyOwnership(docId, normalizedKey);
+        if (!ownsKey) {
+            throw new Error("Permission denied: key does not belong to this document");
+        }
     }
 
+    const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: normalizedKey,
+    });
+
+    try {
+        const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
+        return url;
+    } catch {
+        console.error("AWS SDK error generating presigned GET URL");
+        throw new Error("Failed to generate access URL");
+    }
+}
+
+export async function getPresignedUrl(idToken: string | undefined, spaceId: string, docId: string, fileType: string, sourceFileType?: string) {
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
+
+    // Authorization: Must be an active space contributor
+    await authorizeSpaceContributor(uid, spaceId);
+    await getAndVerifyDocument(spaceId, docId);
+
+    const ext = ALLOWED_MIME_TYPES[fileType];
+    if (!ext) {
+        throw new Error("Unsupported file type");
+    }
+
+    if (sourceFileType && !ALLOWED_MIME_TYPES[sourceFileType]) {
+        throw new Error("Unsupported source file type");
+    }
+
+    const randomUuid = crypto.randomUUID();
+    const key = `temp/${spaceId}/${docId}/${uid}/${randomUuid}.${ext}`;
+
+    try {
+        const { url, fields } = await createPresignedPost(s3Client, {
+            Bucket: bucket,
+            Key: key,
+            Conditions: [
+                ["content-length-range", 1, 5242880], // 1 byte to 5MB
+                ["eq", "$Content-Type", fileType],
+            ],
+            Fields: {
+                "Content-Type": fileType,
+            },
+            Expires: 300, // 5 minutes
+        });
+
+        return { url, fields, key };
+    } catch {
+        console.error("AWS SDK error generating presigned POST");
+        throw new Error("Failed to generate upload URL");
+    }
+}
+
+export async function permanentizeImages(idToken: string | undefined, spaceId: string, docId: string, urls: string[]) {
+    if (!urls || urls.length === 0) return {};
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
+
+    await authorizeSpaceContributor(uid, spaceId);
+    await getAndVerifyDocument(spaceId, docId);
+
     const mapping: Record<string, string> = {};
+    const expectedPrefix = `temp/${spaceId}/${docId}/${uid}/`;
 
-    await Promise.all(urls.map(async (url) => {
-        try {
-            const urlObj = new URL(url);
-            const path = decodeURIComponent(urlObj.pathname);
+    const results = await Promise.allSettled(urls.map(async (url) => {
+        const path = extractCanonicalKey(url);
+        if (!path) return;
 
-            if (!path.includes('temp/')) {
-                console.log(`Skipping permanentize for ${url} - not in temp/`);
-                return;
-            }
-
-            const keyIndex = path.indexOf('temp/');
-            if (keyIndex === -1) return;
-
-            const oldKey = path.substring(keyIndex); 
-            const newKey = oldKey.replace('temp/', 'uploads/');
-
-            console.log(`Attempting to move S3 object: ${oldKey} -> ${newKey} in bucket ${bucket}`);
-
-            // Copy
-            // According to AWS SDK v3 docs, CopySource should be /bucket/key
-            // and it should be URL encoded.
-            const copySource = `/${bucket}/${encodeURIComponent(oldKey).replace(/%2F/g, '/')}`;
-            
-            await s3Client.send(new CopyObjectCommand({
-                Bucket: bucket,
-                CopySource: copySource,
-                Key: newKey,
-                // ACL removed for private bucket security
-            }));
-            console.log(`Successfully copied ${oldKey} to ${newKey}`);
-
-            // Delete old
-            await s3Client.send(new DeleteObjectCommand({
-                Bucket: bucket,
-                Key: oldKey
-            }));
-            console.log(`Successfully deleted ${oldKey} from temp/`);
-
-            const newUrl = url.replace('temp/', 'uploads/');
-            mapping[url] = newUrl;
-
-        } catch (error) {
-            console.error(`Error in permanentizeImages for ${url}:`, error);
+        const oldKey = `temp/${path}`;
+        if (!oldKey.startsWith(expectedPrefix)) {
+            // Not owned by this caller — skip silently (not a security error)
+            return;
         }
+
+        // Derive destination key: uploads/{spaceId}/{docId}/{uuid}.ext
+        const filename = oldKey.substring(expectedPrefix.length);
+        const newKey = `uploads/${spaceId}/${docId}/${filename}`;
+
+        const copySource = `/${bucket}/${encodeURIComponent(oldKey).replace(/%2F/g, "/")}`;
+
+        // Copy first; if this fails the source is still intact — safely retryable
+        await s3Client.send(new CopyObjectCommand({
+            Bucket: bucket,
+            CopySource: copySource,
+            Key: newKey,
+        }));
+
+        // Delete source after successful copy.
+        // NOTE: If this delete fails, both keys temporarily exist. A subsequent retry
+        // will re-copy (idempotent on S3) and re-attempt the delete.
+        await s3Client.send(new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: oldKey,
+        }));
+
+        const newUrl = url.replace(oldKey, newKey);
+        mapping[url] = newUrl;
     }));
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+        console.error(`permanentizeImages: ${failures.length} of ${urls.length} operations failed`);
+        throw new Error("One or more images could not be saved. Please try again.");
+    }
 
     return mapping;
 }
 
-export async function deleteImages(urls: string[]) {
+export async function deleteImages(idToken: string | undefined, spaceId: string, docId: string, urls: string[]) {
     if (!urls || urls.length === 0) return;
-    const bucket = process.env.AWS_BUCKET_NAME;
-    if (!bucket) return;
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
 
-    await Promise.all(urls.map(async (url) => {
-        try {
-            const urlObj = new URL(url);
-            const path = decodeURIComponent(urlObj.pathname);
-            
-            let key = "";
-            if (path.includes('temp/')) {
-                key = path.substring(path.indexOf('temp/'));
-            } else if (path.includes('uploads/')) {
-                key = path.substring(path.indexOf('uploads/'));
-            }
+    await authorizeSpaceContributor(uid, spaceId);
+    await getAndVerifyDocument(spaceId, docId);
 
-            if (!key) return;
+    const expectedPrefix = `temp/${spaceId}/${docId}/${uid}/`;
 
-            console.log(`Deleting S3 object: ${key} from bucket ${bucket}`);
-            await s3Client.send(new DeleteObjectCommand({
-                Bucket: bucket,
-                Key: key
-            }));
-            console.log(`Successfully deleted ${key}`);
-        } catch (error) {
-            console.error(`Failed to delete image: ${url}`, error);
+    const results = await Promise.allSettled(urls.map(async (url) => {
+        const path = extractCanonicalKey(url);
+        if (!path) return;
+
+        // This function is ONLY for cleaning up session temp images
+        const key = `temp/${path}`;
+        if (!key.startsWith(expectedPrefix)) {
+            return; // Not owned by this caller — silently skip
         }
+
+        await s3Client.send(new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: key,
+        }));
     }));
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+        console.error(`deleteImages: ${failures.length} of ${urls.length} operations failed`);
+        throw new Error("One or more temporary images could not be deleted.");
+    }
 }
 
-export async function softDeleteImages(urls: string[]) {
+export async function softDeleteImages(idToken: string | undefined, spaceId: string, docId: string, urls: string[]) {
     if (!urls || urls.length === 0) return;
-    const bucket = process.env.AWS_BUCKET_NAME;
-    if (!bucket) {
-        console.warn("AWS_BUCKET_NAME is not defined");
-        return;
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
+
+    await authorizeSpaceContributor(uid, spaceId);
+    await getAndVerifyDocument(spaceId, docId);
+
+    // Pre-authorize every requested key. All authorization must finish before the first AWS operation.
+    const keysToSoftDelete: string[] = [];
+    for (const url of urls) {
+        const rawKey = extractCanonicalKey(url);
+        if (!rawKey) {
+            throw new Error("Invalid key format");
+        }
+        const key = `uploads/${rawKey}`;
+        const ownsKey = await verifyLegacyKeyOwnership(docId, key);
+        if (!ownsKey) {
+            throw new Error("Permission denied: key does not belong to this document");
+        }
+        keysToSoftDelete.push(key);
     }
 
-    await Promise.all(urls.map(async (url) => {
-        try {
-            const urlObj = new URL(url);
-            const path = decodeURIComponent(urlObj.pathname);
-            
-            let key = "";
-            // Handle both temp and uploads (and potentially others if they exist)
-            // We strip the leading slash if it exists
-            const rawKey = path.startsWith('/') ? path.substring(1) : path;
-            
-            if (rawKey.startsWith('temp/') || rawKey.startsWith('uploads/')) {
-                key = rawKey;
-            } else {
-                // Fallback for full paths just in case, though usually we expect controlled prefixes
-                key = rawKey;
-            }
+    const results = await Promise.allSettled(keysToSoftDelete.map(async (key) => {
+        const newKey = `deleted/${key}`;
+        const copySource = `/${bucket}/${encodeURIComponent(key).replace(/%2F/g, "/")}`;
 
-            if (!key) return;
+        // Copy first — source remains intact on failure
+        await s3Client.send(new CopyObjectCommand({
+            Bucket: bucket,
+            CopySource: copySource,
+            Key: newKey,
+        }));
 
-            const newKey = `deleted/${key}`; // e.g. deleted/uploads/my-image.png
-
-            console.log(`Soft deleting (moving) S3 object: ${key} -> ${newKey} in bucket ${bucket}`);
-
-            // Copy
-            const copySource = `/${bucket}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
-            
-            await s3Client.send(new CopyObjectCommand({
-                Bucket: bucket,
-                CopySource: copySource,
-                Key: newKey,
-            }));
-            console.log(`Successfully copied ${key} to ${newKey}`);
-
-            // Delete old
-            await s3Client.send(new DeleteObjectCommand({
-                Bucket: bucket,
-                Key: key
-            }));
-            console.log(`Successfully deleted ${key} from original location`);
-
-        } catch (error) {
-            console.error(`Failed to soft delete image: ${url}`, error);
-        }
+        // Delete source after successful copy.
+        // NOTE: If delete fails, both uploads/ and deleted/ keys exist.
+        // A retry will re-copy (idempotent) and re-attempt the delete.
+        await s3Client.send(new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: key,
+        }));
     }));
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+        console.error(`softDeleteImages: ${failures.length} of ${urls.length} operations failed`);
+        throw new Error("One or more images could not be soft-deleted. Please try again.");
+    }
 }
 
-export async function permanentDeleteImages(urls: string[]) {
+export async function permanentDeleteImages(idToken: string | undefined, spaceId: string, docId: string, urls: string[]) {
     if (!urls || urls.length === 0) return;
-    const bucket = process.env.AWS_BUCKET_NAME;
-    if (!bucket) return;
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
 
-    await Promise.all(urls.map(async (url) => {
-        try {
-            const urlObj = new URL(url);
-            const path = decodeURIComponent(urlObj.pathname);
-            
-            // We expect the original URL here (e.g. uploads/image.png)
-            // But the file is actually at deleted/uploads/image.png
-            let key = "";
-            const rawKey = path.startsWith('/') ? path.substring(1) : path;
-            
-            if (rawKey.startsWith('temp/') || rawKey.startsWith('uploads/')) {
-                key = `deleted/${rawKey}`;
-            } else {
-                // If it's already in deleted/ for some reason (unlikely given how we store URLs)
-                if (rawKey.startsWith('deleted/')) {
-                    key = rawKey;
-                } else {
-                   // Fallback: try to delete from deleted/ + rawKey
-                   key = `deleted/${rawKey}`;
-                }
-            }
-
-            console.log(`Permanently deleting S3 object: ${key} from bucket ${bucket}`);
-            await s3Client.send(new DeleteObjectCommand({
-                Bucket: bucket,
-                Key: key
-            }));
-            console.log(`Successfully permanently deleted ${key}`);
-        } catch (error) {
-            console.error(`Failed to permanently delete image: ${url}`, error);
-        }
-    }));
-}
-
-export async function restoreImages(urls: string[]) {
-    if (!urls || urls.length === 0) return;
-    const bucket = process.env.AWS_BUCKET_NAME;
-    if (!bucket) {
-        console.warn("AWS_BUCKET_NAME is not defined");
-        return;
+    // Determine whether this is an active-space operation or a deleted-space owner cleanup.
+    // Both paths MUST verify the document exists and belongs to the specified space.
+    try {
+        await authorizeSpaceContributor(uid, spaceId);
+    } catch {
+        // Space may be soft-deleted — only owner may perform cleanup
+        await authorizeDocumentCleanup(uid, spaceId);
     }
 
-    await Promise.all(urls.map(async (url) => {
-        try {
-            const urlObj = new URL(url);
-            const path = decodeURIComponent(urlObj.pathname);
-            
-            // Original key (e.g. uploads/image.png)
-            // But currently living at deleted/uploads/image.png
-            let key = "";
-            const rawKey = path.startsWith('/') ? path.substring(1) : path;
-            
-            if (rawKey.startsWith('temp/') || rawKey.startsWith('uploads/')) {
-                key = rawKey;
-            } else {
-                return;
-            }
+    // Always verify the document regardless of path.
+    // This prevents a deleted-space owner from using a document from another space
+    // as authorization evidence for key deletion.
+    await getAndVerifyDocument(spaceId, docId);
 
-            const deletedKey = `deleted/${key}`;
-            
-            console.log(`Restoring (moving) S3 object: ${deletedKey} -> ${key} in bucket ${bucket}`);
-
-            // Copy
-            const copySource = `/${bucket}/${encodeURIComponent(deletedKey).replace(/%2F/g, '/')}`;
-            
-            await s3Client.send(new CopyObjectCommand({
-                Bucket: bucket,
-                CopySource: copySource,
-                Key: key,
-            }));
-            console.log(`Successfully copied ${deletedKey} to ${key}`);
-
-            // Delete deleted/ version
-            await s3Client.send(new DeleteObjectCommand({
-                Bucket: bucket,
-                Key: deletedKey
-            }));
-            console.log(`Successfully deleted ${deletedKey} from trash`);
-
-        } catch (error) {
-            console.error(`Failed to restore image: ${url}`, error);
+    // Pre-authorize every requested key. All authorization must finish before the first AWS operation.
+    const keysToDelete: { activeKey: string; deletedKey: string }[] = [];
+    for (const url of urls) {
+        const rawKey = extractCanonicalKey(url);
+        if (!rawKey) {
+            throw new Error("Invalid key format");
         }
+        const activeKey = `uploads/${rawKey}`;
+        const ownsKey = await verifyLegacyKeyOwnership(docId, activeKey);
+        if (!ownsKey) {
+            throw new Error("Permission denied: key does not belong to this document");
+        }
+        keysToDelete.push({
+            activeKey,
+            deletedKey: `deleted/${activeKey}`,
+        });
+    }
+
+    const results = await Promise.allSettled(keysToDelete.flatMap(({ activeKey, deletedKey }) => [
+        s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: activeKey })),
+        s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: deletedKey })),
+    ]));
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+        console.error(`permanentDeleteImages: ${failures.length} of ${urls.length} operations failed`);
+        throw new Error("One or more images could not be permanently deleted. Please try again.");
+    }
+}
+
+export async function restoreImages(idToken: string | undefined, spaceId: string, docId: string, urls: string[]) {
+    if (!urls || urls.length === 0) return;
+    const bucket = getBucket();
+    const { uid } = await verifyIdToken(idToken);
+
+    await authorizeSpaceContributor(uid, spaceId);
+    await getAndVerifyDocument(spaceId, docId);
+
+    // Pre-authorize every requested key. All authorization must finish before the first AWS operation.
+    const keysToRestore: string[] = [];
+    for (const url of urls) {
+        const rawKey = extractCanonicalKey(url);
+        if (!rawKey) {
+            throw new Error("Invalid key format");
+        }
+        const activeKey = `uploads/${rawKey}`;
+        const ownsKey = await verifyLegacyKeyOwnership(docId, activeKey);
+        if (!ownsKey) {
+            throw new Error("Permission denied: key does not belong to this document");
+        }
+        keysToRestore.push(activeKey);
+    }
+
+    const results = await Promise.allSettled(keysToRestore.map(async (activeKey) => {
+        const deletedKey = `deleted/${activeKey}`;
+        const copySource = `/${bucket}/${encodeURIComponent(deletedKey).replace(/%2F/g, "/")}`;
+
+        // Copy from deleted/ back to uploads/ first
+        await s3Client.send(new CopyObjectCommand({
+            Bucket: bucket,
+            CopySource: copySource,
+            Key: activeKey,
+        }));
+
+        // Delete the deleted/ variant after successful copy.
+        // NOTE: If delete fails, both keys exist. Retrying will re-copy and re-attempt delete.
+        await s3Client.send(new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: deletedKey,
+        }));
     }));
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+        console.error(`restoreImages: ${failures.length} of ${urls.length} operations failed`);
+        throw new Error("One or more images could not be restored. Please try again.");
+    }
 }

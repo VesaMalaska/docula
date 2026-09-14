@@ -17,18 +17,18 @@ interface TiptapMark {
   attrs?: Record<string, any>;
 }
 
-export async function jsonToDocx(content: TiptapNode): Promise<Blob> {
+export async function jsonToDocx(content: TiptapNode, spaceId: string, docId: string, idToken?: string): Promise<Blob> {
     if (!content) return new Blob();
 
     const children: (Paragraph)[] = [];
 
     if (content.type === 'doc' && content.content) {
         for (const node of content.content) {
-            const paragraphs = await processNode(node);
+            const paragraphs = await processNode(node, spaceId, docId, idToken);
             children.push(...paragraphs);
         }
     } else {
-        children.push(...await processNode(content));
+        children.push(...await processNode(content, spaceId, docId, idToken));
     }
 
     const doc = new Document({
@@ -41,14 +41,14 @@ export async function jsonToDocx(content: TiptapNode): Promise<Blob> {
     return await Packer.toBlob(doc);
 }
 
-async function processNode(node: TiptapNode): Promise<Paragraph[]> {
+async function processNode(node: TiptapNode, spaceId: string, docId: string, idToken?: string): Promise<Paragraph[]> {
     const paragraphs: Paragraph[] = [];
 
     switch (node.type) {
         case 'paragraph':
             paragraphs.push(new Paragraph({
                 children: await processInlineContent(node),
-                spacing: { after: 120 } // Space after paragraph
+                spacing: { after: 120 }
             }));
             break;
         
@@ -63,7 +63,7 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
         case 'bulletList':
             if (node.content) {
                 for (const listItem of node.content) {
-                     paragraphs.push(...await processListItem(listItem, false));
+                     paragraphs.push(...await processListItem(listItem, false, spaceId, docId, idToken));
                 }
             }
             break;
@@ -71,15 +71,12 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
         case 'orderedList':
              if (node.content) {
                 for (const listItem of node.content) {
-                     paragraphs.push(...await processListItem(listItem, true));
+                     paragraphs.push(...await processListItem(listItem, true, spaceId, docId, idToken));
                 }
             }
             break;
 
         case 'codeBlock':
-            // Simple handling for code blocks - basically text with efficient font? 
-            // docx doesn't have standard code block styling easily without styles.
-            // Just normal paragraph with Courier New font maybe?
              paragraphs.push(new Paragraph({
                 children: [new TextRun({
                     text: node.content?.map(c => c.text).join('\n') || '',
@@ -90,63 +87,86 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
             break;
         
         case 'image':
-             // Image requires async fetch usually if passing URL, does docx support url?
-             // ImageRun usually takes buffer or uint8array. We might need to fetch it.
              const src = node.attrs?.src;
              if (src) {
                  try {
-                     // Use proxy to avoid CORS
-                     const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(src)}`;
-                     const response = await fetch(proxyUrl);
-                     if (!response.ok) throw new Error(`Failed to fetch image via proxy: ${response.status}`);
+                     const urlObj = new URL(src);
                      
-                    const blob = await response.blob();
-                     const buffer = await blob.arrayBuffer();
-                     
-                     // Determine image type from blob
-                     const extension = blob.type.split('/')[1];
-                     // Map to docx supported types: "jpg" | "png" | "gif" | "bmp"
-                     let type: "jpg" | "png" | "gif" | "bmp" = "png"; // default fallback
-                     
-                     if (extension === 'jpeg' || extension === 'jpg') type = "jpg";
-                     else if (extension === 'gif') type = "gif";
-                     else if (extension === 'bmp') type = "bmp";
-                     else if (extension === 'png') type = "png";
-                     // For svg or others, we might want to fallback to png if possible or skip, 
-                     // but docx needs one of specific types. 
-                     // Assuming the proxy returns something standard.
+                     // Check if it's a Docula-managed presigned GET URL or S3 URL
+                     if (urlObj.hostname.includes("amazonaws.com") && (urlObj.pathname.includes("/uploads/") || urlObj.pathname.includes("/temp/"))) {
+                         // Fetch through the secure document-image route
+                         let token = idToken;
+                         if (!token) {
+                             const { auth } = await import("@/lib/firebase");
+                             token = await auth.currentUser?.getIdToken();
+                         }
 
-                     paragraphs.push(new Paragraph({
-                         children: [
-                             new ImageRun({
-                                 data: buffer,
-                                 transformation: {
-                                     width: 400, // default limit
-                                     height: 300,
-                                 },
-                                 type: type,
-                             })
-                         ]
-                     }));
+                         if (!token) {
+                             paragraphs.push(new Paragraph({ text: "[Image unavailable]" }));
+                             break;
+                         }
+
+                         const cleanKey = urlObj.pathname.startsWith('/') ? urlObj.pathname.substring(1) : urlObj.pathname;
+                         const proxyUrl = `/api/document-image?spaceId=${encodeURIComponent(spaceId)}&docId=${encodeURIComponent(docId)}&key=${encodeURIComponent(cleanKey)}`;
+
+                         const response = await fetch(proxyUrl, {
+                             headers: {
+                                 "Authorization": `Bearer ${token}`
+                             }
+                         });
+
+                         if (!response.ok) throw new Error(`Failed to fetch image via proxy: ${response.status}`);
+
+                         const blob = await response.blob();
+                         const buffer = await blob.arrayBuffer();
+
+                         const extension = blob.type.split('/')[1]?.toLowerCase();
+                         let type: "jpg" | "png" | "gif" | "bmp" = "png";
+                         if (extension === 'jpeg' || extension === 'jpg') type = "jpg";
+                         else if (extension === 'gif') type = "gif";
+                         else if (extension === 'bmp') type = "bmp";
+                         else if (extension === 'png') type = "png";
+
+                         paragraphs.push(new Paragraph({
+                             children: [
+                                 new ImageRun({
+                                     data: buffer,
+                                     transformation: {
+                                         width: 400,
+                                         height: 300,
+                                     },
+                                     type: type,
+                                 })
+                             ]
+                         }));
+                     } else {
+                         // External image: Do not fetch. Preserve URL as text link.
+                         paragraphs.push(new Paragraph({
+                             children: [
+                                 new ExternalHyperlink({
+                                     children: [
+                                         new TextRun({
+                                             text: `External image: ${src}`,
+                                             style: "Hyperlink",
+                                         })
+                                     ],
+                                     link: src,
+                                 })
+                             ]
+                         }));
+                     }
                  } catch (e) {
-                     console.error("Failed to load image for docx export", e);
-                     paragraphs.push(new Paragraph({ text: "[Image Upload Failed]" }));
+                     console.error("Failed to load image for docx export:", e instanceof Error ? e.message : "Unknown error");
+                     paragraphs.push(new Paragraph({ text: "[Image unavailable]" }));
                  }
              }
              break;
 
         case 'blockquote':
-             // Indent it
               if (node.content) {
                   for (const child of node.content) {
-                      const childParas = await processNode(child);
+                      const childParas = await processNode(child, spaceId, docId, idToken);
                       childParas.forEach(p => {
-                          // Modifying existing P is hard if not exposed, but we can set indent in constructor
-                          // Since we return P, we might need to recreate them or just simplistic approach:
-                          // docx Paragraph object is mutable? 
-                          // Let's just create new P with indent.
-                          // Limitation: complex nesting inside blockquote might be lost if we don't recurse properly with context.
-                          // For now, simpler: just push them.
                           paragraphs.push(p);
                       });
                   }
@@ -167,10 +187,9 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
              break;
 
         default:
-             // Ignore unknown blocks or process children
              if (node.content) {
                  for (const child of node.content) {
-                     paragraphs.push(...await processNode(child));
+                     paragraphs.push(...await processNode(child, spaceId, docId, idToken));
                  }
              }
              break;
@@ -179,7 +198,7 @@ async function processNode(node: TiptapNode): Promise<Paragraph[]> {
     return paragraphs;
 }
 
-async function processListItem(node: TiptapNode, ordered: boolean): Promise<Paragraph[]> {
+async function processListItem(node: TiptapNode, ordered: boolean, spaceId: string, docId: string, idToken?: string): Promise<Paragraph[]> {
     const paragraphs: Paragraph[] = [];
     // List item content is usually a paragraph
     if (node.content) {
@@ -191,16 +210,9 @@ async function processListItem(node: TiptapNode, ordered: boolean): Promise<Para
                     bullet: {
                         level: 0, 
                     }
-                    // Docx handles ordered vs bullet via numbering/style config, but simpler api:
-                    // new Paragraph({ bullet: { level: 0 } }) for bullet
-                    // For ordered, we need abstract numbering... simplified docx usage might be tricky for ordered.
-                    // Let's use bullet for both or try to find simple ordered.
-                    // docx docs say for numbering: numbering: { reference: "...", level: 0 }
-                    // We'll stick to bullets for now for simplicity or investigate quickly. 
-                    // Actually, let's keep it simple: all bullets for now or just text prefix "1. "
                 }));
             } else {
-                 paragraphs.push(...await processNode(child));
+                 paragraphs.push(...await processNode(child, spaceId, docId, idToken));
             }
         }
     }

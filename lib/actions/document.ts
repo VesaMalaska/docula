@@ -1,4 +1,4 @@
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
 import { 
   collection, 
   doc, 
@@ -92,6 +92,8 @@ export async function getDocument(id: string): Promise<Document | null> {
         const images = extractImageUrls(docData.content);
         const mapping: Record<string, string> = {};
         
+        const idToken = await auth.currentUser?.getIdToken();
+
         await Promise.all(images.map(async (url) => {
             try {
                 // Extract key from URL
@@ -103,7 +105,7 @@ export async function getDocument(id: string): Promise<Document | null> {
                 // Remove leading slash if present
                 const key = path.startsWith('/') ? path.substring(1) : path;
                 
-                const signedUrl = await getPresignedGetUrl(key);
+                const signedUrl = await getPresignedGetUrl(idToken, docData.spaceId, docData.id, key);
                 if (signedUrl) {
                     mapping[url] = signedUrl;
                 }
@@ -242,7 +244,8 @@ export async function deleteDocument(id: string, userId: string = "unknown") {
       if (data.content) {
           const imageUrls = extractImageUrls(data.content);
           if (imageUrls.length > 0) {
-              await softDeleteImages(imageUrls);
+              const idToken = await auth.currentUser?.getIdToken();
+              await softDeleteImages(idToken, data.spaceId, id, imageUrls);
           }
       }
   }
@@ -284,7 +287,8 @@ export async function restoreDocument(id: string) {
         if (data.content) {
             const imageUrls = extractImageUrls(data.content);
             if (imageUrls.length > 0) {
-                await restoreImages(imageUrls);
+                const idToken = await auth.currentUser?.getIdToken();
+                await restoreImages(idToken, data.spaceId, id, imageUrls);
             }
         }
     }
@@ -313,11 +317,8 @@ export async function permanentlyDeleteDocument(id: string) {
         if (content) {
             const imageUrls = extractImageUrls(content);
             if (imageUrls.length > 0) {
-                // We need to construct the keys that are in the deleted/ folder
-                // The softDeleteImages moved them to deleted/ prefix
-                // The original URLs (e.g. key) mapping logic needs to handle this.
-                // However, our helper is on S3 side. Let's make a specific helper for this.
-                await permanentDeleteImages(imageUrls);
+                const idToken = await auth.currentUser?.getIdToken();
+                await permanentDeleteImages(idToken, data.spaceId, id, imageUrls);
             }
         }
 
