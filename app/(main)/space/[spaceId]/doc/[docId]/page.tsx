@@ -220,11 +220,15 @@ export default function DocPage() {
         if (user?.uid) releaseLock(id, user.uid);
         // Delete temp images if navigated away without saving
         if (sessionImagesRef.current.length > 0) {
-          deleteImages(sessionImagesRef.current);
+          import("@/lib/firebase").then(({ auth }) => {
+            auth.currentUser?.getIdToken().then(token => {
+                deleteImages(token, spaceId, id, sessionImagesRef.current);
+            });
+          });
         }
       }
     };
-  }, [id, user?.uid]);
+  }, [id, user?.uid, spaceId]);
 
   const handleEdit = async () => {
     if (!user) return;
@@ -307,7 +311,9 @@ export default function DocPage() {
 
     // Delete temp images uploaded during this session
     if (sessionImages.length > 0) {
-      await deleteImages(sessionImages);
+      const { auth } = await import("@/lib/firebase");
+      const idToken = await auth.currentUser?.getIdToken();
+      await deleteImages(idToken, spaceId, id, sessionImages);
       setSessionImages([]);
     }
 
@@ -327,7 +333,8 @@ export default function DocPage() {
         blob = new Blob([contentStr], { type: "text/markdown" });
         extension = "md";
       } else if (format === "docx") {
-        blob = await jsonToDocx(doc.content);
+        const idToken = await user?.getIdToken();
+        blob = await jsonToDocx(doc.content, spaceId, id, idToken);
         extension = "docx";
       }
 
@@ -382,18 +389,18 @@ export default function DocPage() {
       });
 
       // 4. Move images from temp to uploads
-      if (imagesToPermanentize.length > 0) {
-        // permanentizeImages returns { "unsignedTempUrl": "unsignedUploadsUrl" }
-        const mapping = await permanentizeImages(imagesToPermanentize);
+      if (imagesToPermanentize.length > 0 || imagesToDelete.length > 0) {
+        const { auth } = await import("@/lib/firebase");
+        const idToken = await auth.currentUser?.getIdToken();
 
-        // 5. Update content with new URLs
-        // Since finalContent has Unsigned URLs, and mapping keys are Unsigned URLs, this works.
-        finalContent = replaceImageUrls(finalContent, mapping);
-      }
+        if (imagesToPermanentize.length > 0) {
+          const mapping = await permanentizeImages(idToken, spaceId, id, imagesToPermanentize);
+          finalContent = replaceImageUrls(finalContent, mapping);
+        }
 
-      // 6. Delete images that were uploaded but then removed from editor before saving
-      if (imagesToDelete.length > 0) {
-        await deleteImages(imagesToDelete);
+        if (imagesToDelete.length > 0) {
+          await deleteImages(idToken, spaceId, id, imagesToDelete);
+        }
       }
 
       await updateDocument(id, {
@@ -681,6 +688,7 @@ export default function DocPage() {
           onChange={setContent}
           onImageUpload={(url) => setSessionImages((prev) => [...prev, url])}
           spaceId={spaceId}
+          docId={id}
           isScrolled={isScrolled}
         />
       </div>
