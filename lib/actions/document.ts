@@ -14,9 +14,10 @@ import {
   where,
   deleteDoc,
   writeBatch,
-  DocumentSnapshot
+  DocumentSnapshot,
+  FirestoreError
 } from "firebase/firestore";
-import { Document, SidebarNode } from "@/lib/types";
+import type { Document, SidebarNode } from "@/lib/types";
 import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
 import { extractImageUrls, replaceImageUrls } from "../utils";
 import { calculateNewPath, calculateDescendantPath, calculateSubtreeHeightFromPaths } from "../utils/hierarchy";
@@ -67,9 +68,28 @@ export async function createDocument(
   return docRef.id;
 }
 
+export function isFirestorePermissionDeniedError(error: unknown): boolean {
+  if (error instanceof FirestoreError) {
+    return error.code === "permission-denied";
+  }
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as { code: unknown }).code;
+    return code === "permission-denied" || code === "firestore/permission-denied";
+  }
+  return false;
+}
+
 export async function getDocument(id: string): Promise<Document | null> {
   const docRef = doc(db, "documents", id);
-  const docSnap = await getDoc(docRef);
+  let docSnap: DocumentSnapshot;
+  try {
+    docSnap = await getDoc(docRef);
+  } catch (error: unknown) {
+    if (isFirestorePermissionDeniedError(error)) {
+      return null;
+    }
+    throw error;
+  }
 
   if (docSnap.exists()) {
     const data = docSnap.data();
@@ -80,7 +100,15 @@ export async function getDocument(id: string): Promise<Document | null> {
 
     // Fetch content from subcollection
     const contentRef = doc(db, "documents", id, "content", "main");
-    const contentSnap = await getDoc(contentRef);
+    let contentSnap: DocumentSnapshot;
+    try {
+      contentSnap = await getDoc(contentRef);
+    } catch (error: unknown) {
+      if (isFirestorePermissionDeniedError(error)) {
+        return null;
+      }
+      throw error;
+    }
     if (contentSnap.exists()) {
         docData.content = contentSnap.data().content;
     } else {
