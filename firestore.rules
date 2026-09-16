@@ -52,6 +52,47 @@ service cloud.firestore {
       return spaceExists(spaceId) && isSpaceActive(getSpaceData(spaceId)) && isSpaceContributor(getSpaceData(spaceId));
     }
 
+    function getDocumentData(docId) {
+      return get(/databases/$(database)/documents/documents/$(docId)).data;
+    }
+
+    function documentExists(docId) {
+      return exists(/databases/$(database)/documents/documents/$(docId));
+    }
+
+    function isDocumentActive(docData) {
+      return (!('deleted' in docData) || docData.deleted == false) &&
+        (!('deletedAt' in docData) || docData.deletedAt == null);
+    }
+
+    function getDocumentSpaceId(docId) {
+      return documentExists(docId)
+        ? getDocumentData(docId).spaceId
+        : getAfter(/databases/$(database)/documents/documents/$(docId)).data.spaceId;
+    }
+
+    function isValidChildDocument(data, docId) {
+      return data.parentId is string &&
+        data.parentId != docId &&
+        documentExists(data.parentId) &&
+        getDocumentData(data.parentId).spaceId == data.spaceId &&
+        isDocumentActive(getDocumentData(data.parentId)) &&
+        ('path' in getDocumentData(data.parentId)) &&
+        (getDocumentData(data.parentId).path is list) &&
+        data.path == getDocumentData(data.parentId).path.concat([data.parentId]);
+    }
+
+    function isValidDocumentHierarchy(docId) {
+      return ('path' in request.resource.data) &&
+        (request.resource.data.path is list) &&
+        request.resource.data.path.size() <= 3 &&
+        ('parentId' in request.resource.data) &&
+        (
+          (request.resource.data.parentId == null && request.resource.data.path == []) ||
+          isValidChildDocument(request.resource.data, docId)
+        );
+    }
+
     function isValidSpaceCreate() {
       return isAuthenticated() &&
         request.resource.data.ownerId == request.auth.uid &&
@@ -175,10 +216,11 @@ service cloud.firestore {
     }
 
     match /documents/{documentId} {
-      // Allow create if caller is a contributor of the target space
+      // Allow create if caller is a contributor of the target space and hierarchy is valid
       allow create: if isAuthenticated() &&
         request.resource.data.spaceId is string &&
-        canContributeToSpace(request.resource.data.spaceId);
+        canContributeToSpace(request.resource.data.spaceId) &&
+        isValidDocumentHierarchy(documentId);
       
       // Allow read if caller has read access to document's active space, or owner during cleanup
       allow read: if isAuthenticated() && (
@@ -199,14 +241,14 @@ service cloud.firestore {
 
       match /content/{contentId} {
          allow read: if isAuthenticated() && (
-           canReadSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId) ||
-           canCleanupDocument(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId)
+           canReadSpace(getDocumentSpaceId(documentId)) ||
+           canCleanupDocument(getDocumentSpaceId(documentId))
          );
          allow create, update: if isAuthenticated() &&
-           canContributeToSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId);
+           canContributeToSpace(getDocumentSpaceId(documentId));
          allow delete: if isAuthenticated() && (
-           canContributeToSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId) ||
-           canCleanupDocument(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId)
+           canContributeToSpace(getDocumentSpaceId(documentId)) ||
+           canCleanupDocument(getDocumentSpaceId(documentId))
          );
       }
     }

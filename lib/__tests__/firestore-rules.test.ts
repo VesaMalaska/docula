@@ -20,6 +20,7 @@ import {
   query,
   where,
   getDocs,
+  writeBatch,
 } from "firebase/firestore";
 import { extractImageUrls } from "../utils.ts";
 
@@ -648,6 +649,7 @@ if (!isEmulatorRunning) {
             title: "Bob Doc",
             spaceId: publicSpaceId,
             parentId: null,
+            path: [],
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           })
@@ -1850,6 +1852,7 @@ if (!isEmulatorRunning) {
             title: "Bob's Work",
             spaceId: spaceId,
             parentId: null,
+            path: [],
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           })
@@ -1993,6 +1996,410 @@ if (!isEmulatorRunning) {
         await assertFails(
           updateDoc(spaceRefAlice, {
             userIds: ["alice"],
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+    });
+
+    describe("Document Creation & Hierarchy Integrity Rules", () => {
+      const spaceHierarchyId = "space-hierarchy-test";
+      const spaceForeignId = "space-foreign-test";
+      const spaceDeletedId = "space-deleted-hierarchy-test";
+      const rootDocId = "doc-root-lvl1";
+      const childDocId = "doc-child-lvl2";
+      const grandchildDocId = "doc-grandchild-lvl3";
+      const greatGrandchildDocId = "doc-greatgrandchild-lvl4";
+      const softDeletedDocId = "doc-soft-deleted";
+      const foreignDocId = "doc-foreign";
+
+      beforeEach(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+
+          // Active space with alice as owner, bob as member, charlie as non-member
+          await setDoc(doc(db, "spaces", spaceHierarchyId), {
+            name: "Hierarchy Test Space",
+            isPublic: false,
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: null,
+            deletedBy: null,
+          });
+
+          // Foreign space owned by charlie
+          await setDoc(doc(db, "spaces", spaceForeignId), {
+            name: "Foreign Space",
+            isPublic: false,
+            ownerId: "charlie",
+            userIds: ["charlie"],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: null,
+            deletedBy: null,
+          });
+
+          // Soft-deleted space owned by alice
+          await setDoc(doc(db, "spaces", spaceDeletedId), {
+            name: "Deleted Space",
+            isPublic: false,
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: new Date(),
+            deletedBy: "alice",
+          });
+
+          // Root doc in spaceHierarchyId (depth 1, path: [])
+          await setDoc(doc(db, "documents", rootDocId), {
+            spaceId: spaceHierarchyId,
+            title: "Root Doc",
+            parentId: null,
+            path: [],
+            deleted: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          // Child doc in spaceHierarchyId (depth 2, path: [rootDocId])
+          await setDoc(doc(db, "documents", childDocId), {
+            spaceId: spaceHierarchyId,
+            title: "Child Doc",
+            parentId: rootDocId,
+            path: [rootDocId],
+            deleted: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          // Grandchild doc in spaceHierarchyId (depth 3, path: [rootDocId, childDocId])
+          await setDoc(doc(db, "documents", grandchildDocId), {
+            spaceId: spaceHierarchyId,
+            title: "Grandchild Doc",
+            parentId: childDocId,
+            path: [rootDocId, childDocId],
+            deleted: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          // Great-grandchild doc in spaceHierarchyId (depth 4, path: [rootDocId, childDocId, grandchildDocId])
+          await setDoc(doc(db, "documents", greatGrandchildDocId), {
+            spaceId: spaceHierarchyId,
+            title: "Great Grandchild Doc",
+            parentId: grandchildDocId,
+            path: [rootDocId, childDocId, grandchildDocId],
+            deleted: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          // Soft-deleted doc in spaceHierarchyId
+          await setDoc(doc(db, "documents", softDeletedDocId), {
+            spaceId: spaceHierarchyId,
+            title: "Soft Deleted Doc",
+            parentId: rootDocId,
+            path: [rootDocId],
+            deleted: true,
+            deletedAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+
+          // Foreign doc in spaceForeignId
+          await setDoc(doc(db, "documents", foreignDocId), {
+            spaceId: spaceForeignId,
+            title: "Foreign Doc",
+            parentId: null,
+            path: [],
+            deleted: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        });
+      });
+
+      test("legitimate root document creation succeeds with parentId == null and path == []", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertSucceeds(
+          setDoc(doc(bob, "documents", "doc-new-root"), {
+            spaceId: spaceHierarchyId,
+            title: "New Root Document",
+            parentId: null,
+            path: [],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("legitimate nested document creation succeeds across depths 2, 3, and 4", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        // Level 2 under root
+        await assertSucceeds(
+          setDoc(doc(bob, "documents", "doc-new-level-2"), {
+            spaceId: spaceHierarchyId,
+            title: "New Level 2",
+            parentId: rootDocId,
+            path: [rootDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Level 3 under level 2
+        await assertSucceeds(
+          setDoc(doc(bob, "documents", "doc-new-level-3"), {
+            spaceId: spaceHierarchyId,
+            title: "New Level 3",
+            parentId: childDocId,
+            path: [rootDocId, childDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Level 4 under level 3
+        await assertSucceeds(
+          setDoc(doc(bob, "documents", "doc-new-level-4"), {
+            spaceId: spaceHierarchyId,
+            title: "New Level 4",
+            parentId: grandchildDocId,
+            path: [rootDocId, childDocId, grandchildDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("atomic batch write creating document and content simultaneously succeeds", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const batch = writeBatch(bob);
+        const newDocId = "doc-atomic-created";
+        const docRef = doc(bob, "documents", newDocId);
+        const contentRef = doc(bob, `documents/${newDocId}/content`, "main");
+
+        batch.set(docRef, {
+          spaceId: spaceHierarchyId,
+          title: "Atomic Doc",
+          parentId: null,
+          path: [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        batch.set(contentRef, {
+          content: { type: "doc", content: [] },
+          updatedAt: serverTimestamp(),
+        });
+
+        await assertSucceeds(batch.commit());
+      });
+
+      test("rules-denied batch write persists neither metadata nor content in emulator", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const batch = writeBatch(bob);
+        const deniedDocId = "doc-atomic-denied";
+        const docRef = doc(bob, "documents", deniedDocId);
+        const contentRef = doc(bob, `documents/${deniedDocId}/content`, "main");
+
+        // Staged write 1: Document metadata violates rules with forged hierarchy path
+        batch.set(docRef, {
+          spaceId: spaceHierarchyId,
+          title: "Denied Batch Doc",
+          parentId: rootDocId,
+          path: ["forged-wrong-path"],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        // Staged write 2: Valid content payload that would otherwise be allowed
+        batch.set(contentRef, {
+          content: { type: "doc", content: [{ type: "paragraph", text: "Valid content" }] },
+          updatedAt: serverTimestamp(),
+        });
+
+        // Assert batch commit is denied
+        await assertFails(batch.commit());
+
+        // Assert neither metadata nor content exists in actual emulator storage
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const adminDb = context.firestore();
+          const metaSnap = await getDoc(doc(adminDb, "documents", deniedDocId));
+          const contentSnap = await getDoc(doc(adminDb, `documents/${deniedDocId}/content`, "main"));
+
+          assert.equal(metaSnap.exists(), false);
+          assert.equal(contentSnap.exists(), false);
+        });
+      });
+
+      test("direct client cannot create document with arbitrary short but incorrect path", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        // Child under rootDocId submitting empty path []
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-forged-empty-path"), {
+            spaceId: spaceHierarchyId,
+            title: "Forged Path",
+            parentId: rootDocId,
+            path: [],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+        // Child under rootDocId submitting wrong ancestor
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-forged-wrong-path"), {
+            spaceId: spaceHierarchyId,
+            title: "Forged Path 2",
+            parentId: rootDocId,
+            path: ["wrong-ancestor-id"],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create document with cross-Space parent reference", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        // Pointing to parent in foreign space
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-cross-space-parent"), {
+            spaceId: spaceHierarchyId,
+            title: "Cross Space Parent",
+            parentId: foreignDocId,
+            path: [foreignDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create document with nonexistent parent reference", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-nonexistent-parent"), {
+            spaceId: spaceHierarchyId,
+            title: "Nonexistent Parent",
+            parentId: "doc-does-not-exist",
+            path: ["doc-does-not-exist"],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create child under a soft-deleted parent", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-under-deleted-parent"), {
+            spaceId: spaceHierarchyId,
+            title: "Under Deleted Parent",
+            parentId: softDeletedDocId,
+            path: [rootDocId, softDeletedDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create a fifth-level document (path.size > 3)", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        // Child under depth 4 document (would be depth 5, path length 4)
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-level-5"), {
+            spaceId: spaceHierarchyId,
+            title: "Level 5 Forbidden",
+            parentId: greatGrandchildDocId,
+            path: [rootDocId, childDocId, grandchildDocId, greatGrandchildDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create a self-parented document", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const selfDocId = "doc-self-parented";
+        await assertFails(
+          setDoc(doc(bob, "documents", selfDocId), {
+            spaceId: spaceHierarchyId,
+            title: "Self Parented",
+            parentId: selfDocId,
+            path: [selfDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create document with non-list or missing path", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-invalid-path-type"), {
+            spaceId: spaceHierarchyId,
+            title: "Invalid Path Type",
+            parentId: null,
+            path: "not-a-list",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create root document with non-empty path", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-root-non-empty-path"), {
+            spaceId: spaceHierarchyId,
+            title: "Root Non Empty Path",
+            parentId: null,
+            path: [rootDocId],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create document into a missing space", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-in-missing-space"), {
+            spaceId: "space-does-not-exist",
+            title: "Missing Space Doc",
+            parentId: null,
+            path: [],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("direct client cannot create document into a soft-deleted space", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-in-deleted-space"), {
+            spaceId: spaceDeletedId,
+            title: "Deleted Space Doc",
+            parentId: null,
+            path: [],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("unauthorized non-contributor cannot create document", async () => {
+        const charlie = testEnv.authenticatedContext("charlie").firestore();
+        await assertFails(
+          setDoc(doc(charlie, "documents", "doc-unauth-create"), {
+            spaceId: spaceHierarchyId,
+            title: "Unauthorized Create",
+            parentId: null,
+            path: [],
+            createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           })
         );
