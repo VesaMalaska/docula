@@ -4,8 +4,6 @@ import {
   doc, 
   getDoc, 
   getDocs, 
-  addDoc, 
-  setDoc,
   updateDoc,
   runTransaction,
   serverTimestamp, 
@@ -33,14 +31,50 @@ export async function createDocument(
   parentId: string | null = null,
   options?: CreateDocumentOptions
 ) {
+  const spaceRef = doc(db, "spaces", spaceId);
+  const spaceSnap = await getDoc(spaceRef);
+  if (!spaceSnap.exists()) {
+    throw new Error("Space not found");
+  }
+  const spaceData = spaceSnap.data();
+  if (spaceData?.deletedAt != null) {
+    throw new Error("Cannot create document in a deleted space");
+  }
+
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("Unauthorized: authentication required");
+  }
+  const isOwner = spaceData.ownerId === currentUser.uid;
+  const isMember = Array.isArray(spaceData.userIds) && spaceData.userIds.includes(currentUser.uid);
+  if (!isOwner && !isMember) {
+    throw new Error("Unauthorized: caller is not a contributor to this space");
+  }
+
+  const docRef = doc(collection(db, "documents"));
+  const docId = docRef.id;
+
   let path: string[] = [];
-  
-  if (parentId) {
+
+  if (parentId !== null) {
+    if (parentId === docId) {
+      throw new Error("Cannot set document as its own parent");
+    }
     const parentRef = doc(db, "documents", parentId);
     const parentSnap = await getDoc(parentRef);
-    if (parentSnap.exists()) {
-      const parentData = parentSnap.data();
-      path = [...(parentData.path || []), parentId];
+    if (!parentSnap.exists()) {
+      throw new Error("Parent document not found");
+    }
+    const parentData = parentSnap.data();
+    if (parentData?.deleted === true || parentData?.deletedAt != null) {
+      throw new Error("Parent document is deleted");
+    }
+    if (parentData?.spaceId !== spaceId) {
+      throw new Error("Parent document belongs to a different space");
+    }
+    path = calculateNewPath(parentData?.path, parentId);
+    if (path.length > 3) {
+      throw new Error("Document creation exceeds maximum hierarchy depth of 4 levels");
     }
   }
 
@@ -62,10 +96,13 @@ export async function createDocument(
     deleted: false,
   };
 
-  const docRef = await addDoc(collection(db, "documents"), newDoc);
-  const contentRef = doc(db, "documents", docRef.id, "content", "main");
-  await setDoc(contentRef, { content });
-  return docRef.id;
+  const contentRef = doc(db, "documents", docId, "content", "main");
+  const batch = writeBatch(db);
+  batch.set(docRef, newDoc);
+  batch.set(contentRef, { content });
+  await batch.commit();
+
+  return docId;
 }
 
 export function isFirestorePermissionDeniedError(error: unknown): boolean {
