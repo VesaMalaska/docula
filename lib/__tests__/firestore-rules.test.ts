@@ -671,8 +671,18 @@ if (!isEmulatorRunning) {
           })
         );
 
-        // Member deletes document
-        await assertSucceeds(deleteDoc(doc(bob, "documents", newDocId)));
+        // Member soft-deletes document
+        await assertSucceeds(
+          updateDoc(doc(bob, "documents", newDocId), {
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedBy: "bob",
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Member cannot hard-delete document directly in active space
+        await assertFails(deleteDoc(doc(bob, "documents", newDocId)));
       });
     });
 
@@ -2400,6 +2410,430 @@ if (!isEmulatorRunning) {
             parentId: null,
             path: [],
             createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+    });
+
+    describe("Permanent Document Deletion & Hard-Delete Protection Rules", () => {
+      const activeSpaceId = "space-perm-del-active";
+      const deletedSpaceId = "space-perm-del-deleted";
+      const activeDocId = "doc-perm-active";
+      const softDeletedDocId = "doc-perm-soft";
+      const docInDeletedSpaceId = "doc-in-deleted-space-perm";
+
+      beforeEach(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+          // Active space with Alice (owner) and Bob (member)
+          await setDoc(doc(db, "spaces", activeSpaceId), {
+            name: "Active Space",
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            isPublic: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            deletedAt: null,
+            deletedBy: null,
+          });
+
+          // Soft-deleted space with Alice (owner) and Bob (member)
+          await setDoc(doc(db, "spaces", deletedSpaceId), {
+            name: "Deleted Space",
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            isPublic: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            deletedAt: serverTimestamp(),
+            deletedBy: "alice",
+          });
+
+          // Active document and content in active space
+          await setDoc(doc(db, "documents", activeDocId), {
+            spaceId: activeSpaceId,
+            title: "Active Document",
+            parentId: null,
+            path: [],
+            deleted: false,
+            deletedAt: null,
+            deletedBy: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${activeDocId}/content`, "main"), {
+            content: "Active document content",
+            updatedAt: serverTimestamp(),
+          });
+
+          // Soft-deleted document and content in active space
+          await setDoc(doc(db, "documents", softDeletedDocId), {
+            spaceId: activeSpaceId,
+            title: "Soft Deleted Document",
+            parentId: null,
+            path: [],
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedBy: "bob",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${softDeletedDocId}/content`, "main"), {
+            content: "Soft deleted document content",
+            updatedAt: serverTimestamp(),
+          });
+
+          // Document and content in deleted space
+          await setDoc(doc(db, "documents", docInDeletedSpaceId), {
+            spaceId: deletedSpaceId,
+            title: "Doc in Deleted Space",
+            parentId: null,
+            path: [],
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedBy: "alice",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${docInDeletedSpaceId}/content`, "main"), {
+            content: "Content in deleted space",
+            updatedAt: serverTimestamp(),
+          });
+        });
+      });
+
+      test("direct client cannot hard-delete an active document in active space", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(deleteDoc(doc(bob, "documents", activeDocId)));
+        await assertFails(deleteDoc(doc(alice, "documents", activeDocId)));
+      });
+
+      test("direct client cannot hard-delete active document content in active space", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(deleteDoc(doc(bob, `documents/${activeDocId}/content`, "main")));
+        await assertFails(deleteDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
+      });
+
+      test("direct client cannot hard-delete a soft-deleted document from an active Space", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(deleteDoc(doc(bob, "documents", softDeletedDocId)));
+        await assertFails(deleteDoc(doc(alice, "documents", softDeletedDocId)));
+      });
+
+      test("direct client cannot hard-delete soft-deleted document content from an active Space", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(deleteDoc(doc(bob, `documents/${softDeletedDocId}/content`, "main")));
+        await assertFails(deleteDoc(doc(alice, `documents/${softDeletedDocId}/content`, "main")));
+      });
+
+      test("direct client cannot hard-delete document as an unauthorized user", async () => {
+        const charlie = testEnv.authenticatedContext("charlie").firestore();
+
+        await assertFails(deleteDoc(doc(charlie, "documents", activeDocId)));
+        await assertFails(deleteDoc(doc(charlie, "documents", softDeletedDocId)));
+      });
+
+      test("direct client cannot hard-delete document as a removed member", async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+          await updateDoc(doc(db, "spaces", activeSpaceId), {
+            userIds: ["alice"],
+          });
+        });
+
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(deleteDoc(doc(bob, "documents", activeDocId)));
+        await assertFails(deleteDoc(doc(bob, "documents", softDeletedDocId)));
+      });
+
+      test("soft deletion by authorized contributors still works via updateDoc", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertSucceeds(
+          updateDoc(doc(bob, "documents", activeDocId), {
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedBy: "bob",
+          })
+        );
+      });
+
+      test("required owner-only deleted-Space cleanup remains possible", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+
+        await assertSucceeds(deleteDoc(doc(alice, `documents/${docInDeletedSpaceId}/content`, "main")));
+        await assertSucceeds(deleteDoc(doc(alice, "documents", docInDeletedSpaceId)));
+        await assertSucceeds(deleteDoc(doc(alice, "spaces", deletedSpaceId)));
+      });
+
+      test("ordinary members cannot perform deleted-Space cleanup", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(deleteDoc(doc(bob, `documents/${docInDeletedSpaceId}/content`, "main")));
+        await assertFails(deleteDoc(doc(bob, "documents", docInDeletedSpaceId)));
+        await assertFails(deleteDoc(doc(bob, "spaces", deletedSpaceId)));
+      });
+    });
+
+    describe("Permanent Deletion Claims & Concurrency Protection Rules", () => {
+      const activeSpaceId = "space-claim-test";
+      const activeDocId = "doc-claim-active";
+      const softDeletedDocId = "doc-claim-soft-deleted";
+      const claimedDocId = "doc-claim-claimed";
+      const activeParent1Id = "doc-claim-parent-1";
+      const activeParent2Id = "doc-claim-parent-2";
+      const childDocId = "doc-claim-child";
+
+      beforeEach(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+          // Active space with Alice (owner) and Bob (member)
+          await setDoc(doc(db, "spaces", activeSpaceId), {
+            name: "Claim Test Space",
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            isPublic: false,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            deletedAt: null,
+            deletedBy: null,
+          });
+
+          // Unclaimed active document
+          await setDoc(doc(db, "documents", activeDocId), {
+            spaceId: activeSpaceId,
+            title: "Active Doc",
+            parentId: null,
+            path: [],
+            deleted: false,
+            deletedAt: null,
+            deletedBy: null,
+            permanentDeletionClaim: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${activeDocId}/content`, "main"), {
+            content: "Active content",
+            updatedAt: serverTimestamp(),
+          });
+
+          // Unclaimed soft-deleted document
+          await setDoc(doc(db, "documents", softDeletedDocId), {
+            spaceId: activeSpaceId,
+            title: "Soft Deleted Doc",
+            parentId: null,
+            path: [],
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedBy: "bob",
+            permanentDeletionClaim: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${softDeletedDocId}/content`, "main"), {
+            content: "Soft deleted content",
+            updatedAt: serverTimestamp(),
+          });
+
+          // Claimed soft-deleted document
+          await setDoc(doc(db, "documents", claimedDocId), {
+            spaceId: activeSpaceId,
+            title: "Claimed Doc",
+            parentId: null,
+            path: [],
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedBy: "bob",
+            permanentDeletionClaim: {
+              claimedAt: serverTimestamp(),
+              claimedBy: "alice",
+            },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${claimedDocId}/content`, "main"), {
+            content: "Claimed content",
+            updatedAt: serverTimestamp(),
+          });
+
+          // Active parents for move testing
+          await setDoc(doc(db, "documents", activeParent1Id), {
+            spaceId: activeSpaceId,
+            title: "Active Parent 1",
+            parentId: null,
+            path: [],
+            deleted: false,
+            deletedAt: null,
+            permanentDeletionClaim: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, "documents", activeParent2Id), {
+            spaceId: activeSpaceId,
+            title: "Active Parent 2",
+            parentId: null,
+            path: [],
+            deleted: false,
+            deletedAt: null,
+            permanentDeletionClaim: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+
+          // Child doc under Parent 1
+          await setDoc(doc(db, "documents", childDocId), {
+            spaceId: activeSpaceId,
+            title: "Child Doc",
+            parentId: activeParent1Id,
+            path: [activeParent1Id],
+            deleted: false,
+            deletedAt: null,
+            permanentDeletionClaim: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        });
+      });
+
+      test("restore succeeds normally before a claim", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertSucceeds(
+          updateDoc(doc(bob, "documents", softDeletedDocId), {
+            deleted: false,
+            deletedAt: null,
+            deletedBy: null,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("restore is rejected after a permanent-deletion claim", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          updateDoc(doc(bob, "documents", claimedDocId), {
+            deleted: false,
+            deletedAt: null,
+            deletedBy: null,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("a direct client cannot forge a permanent-deletion claim on update", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          updateDoc(doc(bob, "documents", activeDocId), {
+            permanentDeletionClaim: {
+              claimedAt: serverTimestamp(),
+              claimedBy: "bob",
+            },
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("a direct client cannot create a document with a permanent-deletion claim", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          setDoc(doc(bob, "documents", "forged-claim-doc"), {
+            spaceId: activeSpaceId,
+            title: "Forged Claim",
+            parentId: null,
+            path: [],
+            permanentDeletionClaim: {
+              claimedAt: serverTimestamp(),
+              claimedBy: "bob",
+            },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("a direct client cannot remove a permanent-deletion claim", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          updateDoc(doc(bob, "documents", claimedDocId), {
+            permanentDeletionClaim: null,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("a normal user cannot edit a claimed document metadata or content", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          updateDoc(doc(bob, "documents", claimedDocId), {
+            title: "Hacked Title",
+            updatedAt: serverTimestamp(),
+          })
+        );
+        await assertFails(
+          setDoc(doc(bob, `documents/${claimedDocId}/content`, "main"), {
+            content: "Hacked content",
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("moving beneath a soft-deleted parent is rejected", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          updateDoc(doc(bob, "documents", childDocId), {
+            parentId: softDeletedDocId,
+            path: [softDeletedDocId],
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("moving beneath a claimed parent is rejected", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(
+          updateDoc(doc(bob, "documents", childDocId), {
+            parentId: claimedDocId,
+            path: [claimedDocId],
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("forging a path containing the claimed document ID is rejected", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        // Attempt to forge path containing claimedDocId with null parent
+        await assertFails(
+          updateDoc(doc(bob, "documents", childDocId), {
+            parentId: null,
+            path: [claimedDocId],
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Attempt to forge path containing claimedDocId under active parent
+        await assertFails(
+          updateDoc(doc(bob, "documents", childDocId), {
+            parentId: activeParent2Id,
+            path: [claimedDocId, activeParent2Id],
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("a legitimate move between active parents remains allowed", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertSucceeds(
+          updateDoc(doc(bob, "documents", childDocId), {
+            parentId: activeParent2Id,
+            path: [activeParent2Id],
             updatedAt: serverTimestamp(),
           })
         );

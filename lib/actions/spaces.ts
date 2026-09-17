@@ -344,7 +344,8 @@ export async function restoreSpace(spaceId: string) {
     });
 }
 
-import { permanentlyDeleteDocument } from "./document";
+import { permanentDeleteImages } from "./s3";
+import { extractImageUrls } from "../utils";
 
 export async function permanentlyDeleteSpace(spaceId: string) {
     const spaceRef = doc(db, "spaces", spaceId);
@@ -358,21 +359,34 @@ export async function permanentlyDeleteSpace(spaceId: string) {
     if (!data.deletedAt) {
         throw new Error("Cannot permanently delete an active space. Soft-delete it first.");
     }
-    // 1. Permanently delete all documents in the space
-    // We can re-use getDeletedDocuments API-wise, but we actually want ALL documents (even not deleted ones?)
-    // Actually, if space is deleted, documents might still be there.
-    // Let's use getDocs directly here to be safe and thorough.
-    
-    // NOTE: Ideally this should be a backend function / recursive delete.
-    // Doing it client side has risk of timeout for large spaces.
-    
+    // 1. Permanently delete all documents in the soft-deleted space (owner cleanup)
     const q = query(collection(db, "documents"), where("spaceId", "==", spaceId));
     const querySnapshot = await getDocs(q);
     
-    // Delete documents one by one (to handle image deletion logic in permanentlyDeleteDocument)
-    const deletePromises = querySnapshot.docs.map(doc => permanentlyDeleteDocument(doc.id));
+    const idToken = await currentUser.getIdToken();
+    const deletePromises = querySnapshot.docs.map(async (docSnap) => {
+        const docData = docSnap.data();
+        let content = docData.content;
+        const contentRef = doc(db, "documents", docSnap.id, "content", "main");
+        const contentSnap = await getDoc(contentRef);
+        if (contentSnap.exists()) {
+            content = contentSnap.data()?.content ?? content;
+        }
+
+        if (content) {
+            const imageUrls = extractImageUrls(content);
+            if (imageUrls.length > 0) {
+                await permanentDeleteImages(idToken, spaceId, docSnap.id, imageUrls);
+            }
+        }
+
+        if (contentSnap.exists()) {
+            await deleteDoc(contentRef);
+        }
+        await deleteDoc(docSnap.ref);
+    });
     await Promise.all(deletePromises);
 
     // 2. Delete the space itself
-    await deleteDoc(doc(db, "spaces", spaceId));
+    await deleteDoc(spaceRef);
 }

@@ -710,6 +710,22 @@ test.describe("permanentDeleteImages", () => {
         assert.strictEqual(s3SendMock.mock.callCount(), 0);
     });
 
+    test("rejects foreign space key — no AWS call", async () => {
+        await assert.rejects(
+            permanentDeleteImages("valid", "s1", "d1", ["uploads/foreign-space/d1/owned.png"]),
+            /key belongs to another space/
+        );
+        assert.strictEqual(s3SendMock.mock.callCount(), 0);
+    });
+
+    test("rejects foreign document key — no AWS call", async () => {
+        await assert.rejects(
+            permanentDeleteImages("valid", "s1", "d1", ["uploads/s1/foreign-doc/owned.png"]),
+            /key belongs to another document/
+        );
+        assert.strictEqual(s3SendMock.mock.callCount(), 0);
+    });
+
     test("propagates S3 failure", async () => {
         s3SendMock.mock.mockImplementation(async () => {
             throw new Error("S3 error");
