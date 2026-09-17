@@ -65,6 +65,16 @@ service cloud.firestore {
         (!('deletedAt' in docData) || docData.deletedAt == null);
     }
 
+    function isDocumentClaimed(docData) {
+      return docData != null && ('permanentDeletionClaim' in docData) && docData.permanentDeletionClaim != null;
+    }
+
+    function isDocumentClaimedById(docId) {
+      return documentExists(docId)
+        ? isDocumentClaimed(getDocumentData(docId))
+        : (existsAfter(/databases/$(database)/documents/documents/$(docId)) && isDocumentClaimed(getAfter(/databases/$(database)/documents/documents/$(docId)).data));
+    }
+
     function getDocumentSpaceId(docId) {
       return documentExists(docId)
         ? getDocumentData(docId).spaceId
@@ -77,6 +87,7 @@ service cloud.firestore {
         documentExists(data.parentId) &&
         getDocumentData(data.parentId).spaceId == data.spaceId &&
         isDocumentActive(getDocumentData(data.parentId)) &&
+        !isDocumentClaimed(getDocumentData(data.parentId)) &&
         ('path' in getDocumentData(data.parentId)) &&
         (getDocumentData(data.parentId).path is list) &&
         data.path == getDocumentData(data.parentId).path.concat([data.parentId]);
@@ -216,10 +227,11 @@ service cloud.firestore {
     }
 
     match /documents/{documentId} {
-      // Allow create if caller is a contributor of the target space and hierarchy is valid
+      // Allow create if caller is a contributor of the target space, hierarchy is valid, and not claimed
       allow create: if isAuthenticated() &&
         request.resource.data.spaceId is string &&
         canContributeToSpace(request.resource.data.spaceId) &&
+        !isDocumentClaimed(request.resource.data) &&
         isValidDocumentHierarchy(documentId);
       
       // Allow read if caller has read access to document's active space, or owner during cleanup
@@ -228,16 +240,22 @@ service cloud.firestore {
         canCleanupDocument(resource.data.spaceId)
       );
       
-      // Allow delete if caller is a contributor of an active space, or owner during cleanup
-      allow delete: if isAuthenticated() && (
-        canContributeToSpace(resource.data.spaceId) ||
-        canCleanupDocument(resource.data.spaceId)
-      );
+      // Disallow direct client permanent deletion in active spaces.
+      // Permanent single-document deletion is handled server-authoritatively via Admin SDK.
+      // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
+      allow delete: if isAuthenticated() && canCleanupDocument(resource.data.spaceId);
 
-      // Allow update if caller is a contributor and spaceId is unchanged
+      // Allow update if caller is a contributor, spaceId is unchanged, document is not claimed,
+      // client does not alter permanentDeletionClaim, and hierarchy is valid if parentId or path is modified
       allow update: if isAuthenticated() &&
         request.resource.data.spaceId == resource.data.spaceId &&
-        canContributeToSpace(resource.data.spaceId);
+        canContributeToSpace(resource.data.spaceId) &&
+        !isDocumentClaimed(resource.data) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['permanentDeletionClaim']) &&
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['parentId', 'path']) ||
+          isValidDocumentHierarchy(documentId)
+        );
 
       match /content/{contentId} {
          allow read: if isAuthenticated() && (
@@ -245,11 +263,11 @@ service cloud.firestore {
            canCleanupDocument(getDocumentSpaceId(documentId))
          );
          allow create, update: if isAuthenticated() &&
-           canContributeToSpace(getDocumentSpaceId(documentId));
-         allow delete: if isAuthenticated() && (
-           canContributeToSpace(getDocumentSpaceId(documentId)) ||
-           canCleanupDocument(getDocumentSpaceId(documentId))
-         );
+           canContributeToSpace(getDocumentSpaceId(documentId)) &&
+           !isDocumentClaimedById(documentId);
+         // Disallow direct client permanent deletion in active spaces.
+         // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
+         allow delete: if isAuthenticated() && canCleanupDocument(getDocumentSpaceId(documentId));
       }
     }
 

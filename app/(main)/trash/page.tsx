@@ -11,6 +11,7 @@ import { AlertDialog } from "@/components/ui/alert-dialog";
 import { useState, useRef, useEffect } from "react";
 import { Space } from "@/lib/types";
 import { calculateListFallback } from "@/lib/focus-fallback";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function TrashbinPage() {
     const { user } = useAuth();
@@ -97,6 +98,7 @@ function TrashSpaceSection({
     mainRef: React.RefObject<HTMLDivElement | null>;
 }) {
     const { user } = useAuth();
+    const { toast } = useToast();
     const queryClient = useQueryClient();
     const [documentToDelete, setDocumentToDelete] = useState<string | null>(null);
     const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -117,20 +119,52 @@ function TrashSpaceSection({
              queryClient.invalidateQueries({ queryKey: ["deleted-documents", space.id] });
              queryClient.invalidateQueries({ queryKey: ["sidebar-tree", space.id] });
         },
-        onError: () => {
+        onError: (err: unknown) => {
              pendingRestoreRef.current = null;
+             const message = err instanceof Error ? err.message : "";
+             if (message.includes("pending permanent deletion")) {
+                 toast({
+                     title: "Cannot restore document",
+                     description: "This document is pending permanent deletion and cannot be restored.",
+                     variant: "destructive",
+                 });
+             } else {
+                 toast({
+                     title: "Error",
+                     description: "Failed to restore document. Please try again.",
+                     variant: "destructive",
+                 });
+             }
         },
     });
 
     const { mutate: removeForever, isPending: isDeleting } = useMutation({
-        mutationFn: permanentlyDeleteDocument,
+        mutationFn: (docId: string) => permanentlyDeleteDocument(space.id, docId),
         onSuccess: () => {
              queryClient.invalidateQueries({ queryKey: ["deleted-documents", space.id] });
+             setDocumentToDelete(null);
+        },
+        onError: (err: unknown) => {
+             const message = err instanceof Error ? err.message : "";
+             if (message.includes("subdocuments")) {
+                 toast({
+                     title: "Cannot delete document",
+                     description: "This document still contains subdocuments. Permanently delete the subdocuments first.",
+                     variant: "destructive",
+                 });
+             } else {
+                 toast({
+                     title: "Error",
+                     description: "Failed to permanently delete document. Please try again.",
+                     variant: "destructive",
+                 });
+             }
              setDocumentToDelete(null);
         },
     });
 
     const handleDeleteClick = (docId: string) => {
+        if (isDeleting) return;
         const trigger = triggerRefs.current.get(docId);
         returnFocusRef.current = trigger || null;
 
@@ -269,7 +303,7 @@ function TrashSpaceSection({
                 onClose={() => !isDeleting && setDocumentToDelete(null)}
                 title="Permanently Delete Document"
                 description="Are you sure you want to permanently delete this document? This action cannot be undone and will delete all attached images."
-                onAction={() => documentToDelete && removeForever(documentToDelete)}
+                onAction={() => !isDeleting && documentToDelete && removeForever(documentToDelete)}
                 variant="destructive"
                 isLoading={isDeleting}
                 actionLabel={isDeleting ? "Deleting..." : "Delete Forever"}

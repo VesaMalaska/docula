@@ -10,13 +10,13 @@ import {
   query,
   orderBy,
   where,
-  deleteDoc,
   writeBatch,
   DocumentSnapshot,
   FirestoreError
 } from "firebase/firestore";
 import type { Document, SidebarNode } from "@/lib/types";
-import { getPresignedGetUrl, softDeleteImages, permanentDeleteImages, restoreImages } from "./s3";
+import { getPresignedGetUrl, softDeleteImages, restoreImages } from "./s3";
+import { permanentlyDeleteDocumentAction } from "./document-permanent-delete";
 import { extractImageUrls, replaceImageUrls } from "../utils";
 import { calculateNewPath, calculateDescendantPath, calculateSubtreeHeightFromPaths } from "../utils/hierarchy";
 
@@ -349,6 +349,9 @@ export async function restoreDocument(id: string) {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
         const data = docSnap.data();
+        if (data.permanentDeletionClaim) {
+            throw new Error("Cannot restore a document that is pending permanent deletion");
+        }
         if (data.content) {
             const imageUrls = extractImageUrls(data.content);
             if (imageUrls.length > 0) {
@@ -364,37 +367,26 @@ export async function restoreDocument(id: string) {
     });
 }
 
-export async function permanentlyDeleteDocument(id: string) {
-    const docRef = doc(db, "documents", id);
-    const docSnap = await getDoc(docRef);
-    
-    if (docSnap.exists()) {
-        const data = docSnap.data();
-        // 1. Discover content (either from subcollection /content/main or inline legacy)
-        let content = data.content;
-        const contentRef = doc(db, "documents", id, "content", "main");
-        const contentSnap = await getDoc(contentRef);
-        if (contentSnap.exists()) {
-            content = contentSnap.data()?.content ?? content;
-        }
+export async function permanentlyDeleteDocument(spaceIdOrDocId: string, docId?: string) {
+    let actualSpaceId = spaceIdOrDocId;
+    let actualDocId = docId;
 
-        // 2. Permanently delete images from "deleted/" folder
-        if (content) {
-            const imageUrls = extractImageUrls(content);
-            if (imageUrls.length > 0) {
-                const idToken = await auth.currentUser?.getIdToken();
-                await permanentDeleteImages(idToken, data.spaceId, id, imageUrls);
-            }
+    if (!actualDocId) {
+        actualDocId = spaceIdOrDocId;
+        const docRef = doc(db, "documents", actualDocId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+            throw new Error("Document not found");
         }
-
-        // 3. Delete content subcollection document if present
-        if (contentSnap.exists()) {
-            await deleteDoc(contentRef);
-        }
-
-        // 4. Delete root document record
-        await deleteDoc(docRef);
+        actualSpaceId = docSnap.data().spaceId;
     }
+
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) {
+        throw new Error("Authentication required");
+    }
+
+    return await permanentlyDeleteDocumentAction(idToken, actualSpaceId, actualDocId);
 }
 
 export async function getSidebarTree(spaceId: string): Promise<SidebarNode[]> {

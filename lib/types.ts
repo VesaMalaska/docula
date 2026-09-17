@@ -22,6 +22,12 @@ export interface Document {
   deleted?: boolean;
   deletedAt?: Timestamp | null;
   deletedBy?: string | null;
+  permanentDeletionClaim?: PermanentDeletionClaim | null;
+}
+
+export interface PermanentDeletionClaim {
+  claimedAt: Timestamp;
+  claimedBy: string;
 }
 
 

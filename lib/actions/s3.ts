@@ -275,6 +275,17 @@ export async function permanentDeleteImages(idToken: string | undefined, spaceId
         if (!rawKey) {
             throw new Error("Invalid key format");
         }
+        const segments = rawKey.split("/");
+        if (segments.length === 3) {
+            if (segments[0] !== spaceId) {
+                throw new Error("Permission denied: key belongs to another space");
+            }
+            if (segments[1] !== docId) {
+                throw new Error("Permission denied: key belongs to another document");
+            }
+        } else if (segments.length !== 1) {
+            throw new Error("Invalid key format");
+        }
         const activeKey = `uploads/${rawKey}`;
         const ownsKey = await verifyLegacyKeyOwnership(docId, activeKey);
         if (!ownsKey) {
