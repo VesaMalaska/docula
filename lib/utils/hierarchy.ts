@@ -1,6 +1,9 @@
 import type { SidebarNode } from "../types.ts";
 
 export const SPACE_ROOT_ID = "__docula_space_root__";
+export const MAX_DOCUMENT_DEPTH = 4;
+export const MAX_LIFECYCLE_DOCUMENT_LIMIT = 250;
+export const MAX_LIFECYCLE_IMAGE_LIMIT = 500;
 
 export function calculateNewPath(parentPath: string[] | undefined, parentId: string | null): string[] {
   if (!parentId) return [];
@@ -109,6 +112,77 @@ export interface MoveDestinationValidationResult {
 }
 
 /**
+ * Checks whether the resulting deepest depth (destination depth + subtree height)
+ * complies with the canonical maximum hierarchy depth limit.
+ */
+export function isDepthAllowed(destinationDepth: number, subtreeHeight: number): boolean {
+  return destinationDepth + subtreeHeight <= MAX_DOCUMENT_DEPTH;
+}
+
+/**
+ * Calculates the subtree height of a deleted document or deletion group in Trash.
+ * For a single document, returns 1.
+ * For a deletion group root, computes max relative path length + 1 across all group members.
+ */
+export function calculateDeletedDocumentSubtreeHeight(
+  docId: string,
+  deletedDocuments: Array<{ id: string; deletionGroupId?: string | null; path?: string[] }>
+): number {
+  const rootDoc = deletedDocuments.find((d) => d.id === docId);
+  if (!rootDoc) return 1;
+
+  if (rootDoc.deletionGroupId) {
+    const groupMembers = deletedDocuments.filter(
+      (d) => d.deletionGroupId === rootDoc.deletionGroupId
+    );
+    const groupPaths = groupMembers.map((d) => (Array.isArray(d.path) ? d.path : []));
+    return calculateSubtreeHeightFromPaths(docId, groupPaths);
+  }
+
+  return 1;
+}
+
+/**
+ * Validates whether a restored document or subtree with known subtreeHeight
+ * can be restored beneath the specified destination parent.
+ * Space root has destinationDepth = 0.
+ */
+export function validateRestorationDestination(
+  tree: SidebarNode[],
+  destinationParentId: string | null,
+  subtreeHeight: number
+): MoveDestinationValidationResult {
+  let destinationDepth = 0;
+  if (destinationParentId !== null) {
+    const destinationNode = findNodeInTree(tree, destinationParentId);
+    if (!destinationNode) {
+      return {
+        valid: false,
+        reason: "not_found",
+        description: "Destination document was not found",
+      };
+    }
+
+    destinationDepth = getNodeDepth(tree, destinationParentId);
+  }
+
+  if (!isDepthAllowed(destinationDepth, subtreeHeight)) {
+    return {
+      valid: false,
+      reason: "max_depth",
+      description: "Restoring here would exceed the maximum depth of 4 levels",
+    };
+  }
+
+  return { valid: true };
+}
+
+export interface MoveDestinationOptions {
+  subtreeHeight?: number;
+  isRestoration?: boolean;
+}
+
+/**
  * Validates whether a document can be moved to the specified destination parent.
  * Enforces:
  * - Not moving under itself
@@ -121,8 +195,21 @@ export function validateMoveDestination(
   tree: SidebarNode[],
   movedDocId: string,
   destinationParentId: string | null,
-  currentParentId: string | null
+  currentParentId: string | null,
+  options?: MoveDestinationOptions
 ): MoveDestinationValidationResult {
+  if (options?.isRestoration) {
+    if (destinationParentId === movedDocId) {
+      return {
+        valid: false,
+        reason: "self",
+        description: "Cannot move a document under itself",
+      };
+    }
+    const height = options.subtreeHeight ?? 1;
+    return validateRestorationDestination(tree, destinationParentId, height);
+  }
+
   if (destinationParentId === movedDocId) {
     return {
       valid: false,
@@ -170,9 +257,9 @@ export function validateMoveDestination(
     destinationDepth = getNodeDepth(tree, destinationParentId);
   }
 
-  const subtreeHeight = getSubtreeHeight(movedNode);
+  const subtreeHeight = options?.subtreeHeight ?? getSubtreeHeight(movedNode);
 
-  if (destinationDepth + subtreeHeight > 4) {
+  if (!isDepthAllowed(destinationDepth, subtreeHeight)) {
     return {
       valid: false,
       reason: "max_depth",

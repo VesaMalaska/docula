@@ -22,13 +22,36 @@ export interface Document {
   deleted?: boolean;
   deletedAt?: Timestamp | null;
   deletedBy?: string | null;
+  restoreParentId?: string | null;
   permanentDeletionClaim?: PermanentDeletionClaim | null;
+  lifecycleClaim?: LifecycleClaim | null;
+  deletionGroupId?: string | null;
+  deletionGroupRootId?: string | null;
+  deletionGroupCount?: number | null;
 }
 
 export interface PermanentDeletionClaim {
   claimedAt: Timestamp;
   claimedBy: string;
 }
+
+export interface LifecycleClaim {
+  claimedAt: Timestamp;
+  claimedBy: string;
+  operation: "soft-delete" | "restore";
+  strategy?: "move-descendants" | "delete-subtree";
+  opId: string;
+}
+
+export interface SoftDeleteOptions {
+  strategy: "move-descendants" | "delete-subtree";
+  destinationParentId?: string | null;
+}
+
+export type RestoreDestination =
+  | { kind: "original" }
+  | { kind: "root" }
+  | { kind: "document"; parentId: string };
 
 
 export interface SidebarNode {

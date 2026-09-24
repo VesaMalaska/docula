@@ -676,7 +676,7 @@ describe("Persistent claim and concurrency protection", () => {
 
         // Attempting to restore the claimed document must fail
         await assert.rejects(
-            restoreDocument("d1"),
+            restoreDocument("d1", { kind: "original" }),
             /Cannot restore a document that is pending permanent deletion/
         );
         assert.strictEqual(clientUpdateDocMock.mock.callCount(), 0);
@@ -688,7 +688,7 @@ describe("Persistent claim and concurrency protection", () => {
     });
 
     test("unclaimed soft-deleted document can be restored normally", async () => {
-        await restoreDocument("d1");
+        await restoreDocument("d1", { kind: "original" });
 
         assert.strictEqual(clientUpdateDocMock.mock.callCount(), 1);
         const [, updateData] = clientUpdateDocMock.mock.calls[0].arguments;
