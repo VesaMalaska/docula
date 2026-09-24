@@ -66,7 +66,26 @@ service cloud.firestore {
     }
 
     function isDocumentClaimed(docData) {
-      return docData != null && ('permanentDeletionClaim' in docData) && docData.permanentDeletionClaim != null;
+      return docData != null && (
+        (('permanentDeletionClaim' in docData) && docData.permanentDeletionClaim != null) ||
+        (('lifecycleClaim' in docData) && docData.lifecycleClaim != null)
+      );
+    }
+
+    function isAncestorClaimed(ancId) {
+      return documentExists(ancId) && isDocumentClaimed(getDocumentData(ancId));
+    }
+
+    function hasClaimedAncestor(path) {
+      return (path is list) && path.size() > 0 && (
+        isAncestorClaimed(path[0]) ||
+        (path.size() > 1 && isAncestorClaimed(path[1])) ||
+        (path.size() > 2 && isAncestorClaimed(path[2]))
+      );
+    }
+
+    function hasClaimedAncestorFromData(docData) {
+      return docData != null && ('path' in docData) && (docData.path is list) && hasClaimedAncestor(docData.path);
     }
 
     function isDocumentClaimedById(docId) {
@@ -84,10 +103,12 @@ service cloud.firestore {
     function isValidChildDocument(data, docId) {
       return data.parentId is string &&
         data.parentId != docId &&
+        !(docId in data.path) &&
         documentExists(data.parentId) &&
         getDocumentData(data.parentId).spaceId == data.spaceId &&
         isDocumentActive(getDocumentData(data.parentId)) &&
         !isDocumentClaimed(getDocumentData(data.parentId)) &&
+        !hasClaimedAncestorFromData(getDocumentData(data.parentId)) &&
         ('path' in getDocumentData(data.parentId)) &&
         (getDocumentData(data.parentId).path is list) &&
         data.path == getDocumentData(data.parentId).path.concat([data.parentId]);
@@ -97,12 +118,15 @@ service cloud.firestore {
       return ('path' in request.resource.data) &&
         (request.resource.data.path is list) &&
         request.resource.data.path.size() <= 3 &&
+        !(docId in request.resource.data.path) &&
         ('parentId' in request.resource.data) &&
         (
           (request.resource.data.parentId == null && request.resource.data.path == []) ||
           isValidChildDocument(request.resource.data, docId)
         );
     }
+
+
 
     function isValidSpaceCreate() {
       return isAuthenticated() &&
@@ -227,11 +251,33 @@ service cloud.firestore {
     }
 
     match /documents/{documentId} {
+      function isProtectedDocKeyModified(diff) {
+        return diff.affectedKeys().hasAny([
+          'parentId',
+          'path',
+          'permanentDeletionClaim',
+          'lifecycleClaim',
+          'deleted',
+          'deletedAt',
+          'deletedBy',
+          'deletionGroupId',
+          'deletionGroupRootId',
+          'deletionGroupCount',
+          'restoreParentId'
+        ]);
+      }
+
       // Allow create if caller is a contributor of the target space, hierarchy is valid, and not claimed
       allow create: if isAuthenticated() &&
         request.resource.data.spaceId is string &&
         canContributeToSpace(request.resource.data.spaceId) &&
         !isDocumentClaimed(request.resource.data) &&
+        (!('deleted' in request.resource.data) || request.resource.data.deleted == false) &&
+        (!('deletionGroupId' in request.resource.data) || request.resource.data.deletionGroupId == null) &&
+        (!('deletionGroupRootId' in request.resource.data) || request.resource.data.deletionGroupRootId == null) &&
+        (!('deletionGroupCount' in request.resource.data) || request.resource.data.deletionGroupCount == null) &&
+        !('restoreParentId' in request.resource.data) &&
+        !hasClaimedAncestorFromData(request.resource.data) &&
         isValidDocumentHierarchy(documentId);
       
       // Allow read if caller has read access to document's active space, or owner during cleanup
@@ -246,16 +292,13 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && canCleanupDocument(resource.data.spaceId);
 
       // Allow update if caller is a contributor, spaceId is unchanged, document is not claimed,
-      // client does not alter permanentDeletionClaim, and hierarchy is valid if parentId or path is modified
+      // and client does not alter hierarchy fields ('parentId', 'path') or protected lifecycle/deletion keys
       allow update: if isAuthenticated() &&
         request.resource.data.spaceId == resource.data.spaceId &&
         canContributeToSpace(resource.data.spaceId) &&
         !isDocumentClaimed(resource.data) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['permanentDeletionClaim']) &&
-        (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['parentId', 'path']) ||
-          isValidDocumentHierarchy(documentId)
-        );
+        !hasClaimedAncestorFromData(resource.data) &&
+        !isProtectedDocKeyModified(request.resource.data.diff(resource.data));
 
       match /content/{contentId} {
          allow read: if isAuthenticated() && (
@@ -264,7 +307,11 @@ service cloud.firestore {
          );
          allow create, update: if isAuthenticated() &&
            canContributeToSpace(getDocumentSpaceId(documentId)) &&
-           !isDocumentClaimedById(documentId);
+           !isDocumentClaimedById(documentId) &&
+           (
+             !documentExists(documentId) ||
+             !hasClaimedAncestorFromData(getDocumentData(documentId))
+           );
          // Disallow direct client permanent deletion in active spaces.
          // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
          allow delete: if isAuthenticated() && canCleanupDocument(getDocumentSpaceId(documentId));

@@ -14,11 +14,17 @@ import {
   DocumentSnapshot,
   FirestoreError
 } from "firebase/firestore";
-import type { Document, SidebarNode } from "@/lib/types";
-import { getPresignedGetUrl, softDeleteImages, restoreImages } from "./s3";
+import type { Document, SidebarNode, RestoreDestination } from "@/lib/types";
+import { getPresignedGetUrl } from "./s3";
 import { permanentlyDeleteDocumentAction } from "./document-permanent-delete";
+import {
+  softDeleteDocumentAction,
+  restoreDocumentAction,
+  getDocumentDescendantSummaryAction,
+} from "./document-soft-delete";
+import { moveDocumentAction } from "./document-move";
 import { extractImageUrls, replaceImageUrls } from "../utils";
-import { calculateNewPath, calculateDescendantPath, calculateSubtreeHeightFromPaths } from "../utils/hierarchy";
+import { calculateNewPath } from "../utils/hierarchy";
 
 export interface CreateDocumentOptions {
   title?: string;
@@ -299,27 +305,39 @@ export async function updateDocument(id: string, data: Partial<Document>) {
   }
 }
 
-export async function deleteDocument(id: string, userId: string = "unknown") {
+export interface DeleteDocumentOptions {
+  strategy?: "move-descendants" | "delete-subtree";
+  destinationParentId?: string | null;
+}
+
+export async function deleteDocument(
+  id: string,
+  optionsOrUserId?: DeleteDocumentOptions | string
+) {
   const docRef = doc(db, "documents", id);
-  
-  // Fetch document content to find images
   const docSnap = await getDoc(docRef);
-  if (docSnap.exists()) {
-      const data = docSnap.data();
-      if (data.content) {
-          const imageUrls = extractImageUrls(data.content);
-          if (imageUrls.length > 0) {
-              const idToken = await auth.currentUser?.getIdToken();
-              await softDeleteImages(idToken, data.spaceId, id, imageUrls);
-          }
-      }
+  if (!docSnap.exists()) {
+    throw new Error("Document not found");
+  }
+  const data = docSnap.data();
+  const spaceId = data.spaceId;
+
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) {
+    throw new Error("Authentication required");
   }
 
-  await updateDoc(docRef, { 
-      deleted: true,
-      deletedAt: serverTimestamp(),
-      deletedBy: userId
-  });
+  let strategy: "move-descendants" | "delete-subtree" = "move-descendants";
+  let destinationParentId: string | null = data.parentId || null;
+
+  if (optionsOrUserId && typeof optionsOrUserId === "object") {
+    if (optionsOrUserId.strategy) strategy = optionsOrUserId.strategy;
+    if (optionsOrUserId.destinationParentId !== undefined) {
+      destinationParentId = optionsOrUserId.destinationParentId;
+    }
+  }
+
+  return await softDeleteDocumentAction(idToken, spaceId, id, strategy, destinationParentId);
 }
 
 export async function getDeletedDocuments(spaceId: string): Promise<Document[]> {
@@ -344,27 +362,45 @@ export async function getDeletedDocuments(spaceId: string): Promise<Document[]> 
     }
 }
 
-export async function restoreDocument(id: string) {
+export async function restoreDocument(id: string, destination: RestoreDestination = { kind: "original" }) {
     const docRef = doc(db, "documents", id);
     const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.permanentDeletionClaim) {
-            throw new Error("Cannot restore a document that is pending permanent deletion");
-        }
-        if (data.content) {
-            const imageUrls = extractImageUrls(data.content);
-            if (imageUrls.length > 0) {
-                const idToken = await auth.currentUser?.getIdToken();
-                await restoreImages(idToken, data.spaceId, id, imageUrls);
-            }
-        }
+    if (!docSnap.exists()) {
+        throw new Error("Document not found");
     }
-    await updateDoc(docRef, { 
-        deleted: false,
-        deletedAt: null,
-        deletedBy: null
-    });
+    const data = docSnap.data();
+    if (data.permanentDeletionClaim) {
+        throw new Error("Cannot restore a document that is pending permanent deletion");
+    }
+    const spaceId = data.spaceId;
+
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) {
+        throw new Error("Authentication required");
+    }
+
+    try {
+        return await restoreDocumentAction(idToken, spaceId, id, destination);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("Invalid or expired ID token")) {
+            await updateDoc(docRef, {
+                deleted: false,
+                deletedAt: null,
+                deletedBy: null,
+            });
+            return { restoredCount: 1, restoredIds: [id] };
+        }
+        throw error;
+    }
+}
+
+export async function getDocumentDescendantSummary(spaceId: string, docId: string) {
+    const idToken = await auth.currentUser?.getIdToken();
+    if (!idToken) {
+        throw new Error("Authentication required");
+    }
+    return await getDocumentDescendantSummaryAction(idToken, spaceId, docId);
 }
 
 export async function permanentlyDeleteDocument(spaceIdOrDocId: string, docId?: string) {
@@ -502,104 +538,41 @@ export async function searchDocuments(queryText: string, spaceId: string): Promi
   }
 }
 
-export async function moveDocument(id: string, newParentId: string | null) {
-  const docRef = doc(db, "documents", id);
-  const docSnap = await getDoc(docRef);
-
-  if (!docSnap.exists()) {
-    throw new Error("Document not found");
+export async function moveDocument(id: string, newParentId: string | null): Promise<void> {
+  if (!id || typeof id !== "string") {
+    throw new Error("Invalid document ID");
+  }
+  if (newParentId !== null && typeof newParentId !== "string") {
+    throw new Error("Invalid parent ID");
   }
 
-  const docData = docSnap.data();
-  const spaceId = docData.spaceId;
-
-  // No-op check
-  if (docData.parentId === newParentId) {
-    return; // Already in the requested location
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("Authentication required");
   }
 
-  // Prevent self-move
-  if (id === newParentId) {
-    throw new Error("Cannot move a document under itself");
+  const idToken = await currentUser.getIdToken(true);
+  if (!idToken) {
+    throw new Error("Authentication required");
   }
 
-  let newPath: string[] = [];
-  let destinationDepth = 0;
-  
-  if (newParentId) {
-    const parentRef = doc(db, "documents", newParentId);
-    const parentSnap = await getDoc(parentRef);
-    
-    if (!parentSnap.exists()) {
-      throw new Error("Destination parent not found");
+  try {
+    await moveDocumentAction(idToken, id, newParentId);
+  } catch (error: unknown) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    if (
+      rawMessage.includes("maximum hierarchy depth") ||
+      rawMessage.includes("Destination") ||
+      rawMessage.includes("locked by another") ||
+      rawMessage.includes("Cannot move") ||
+      rawMessage.includes("not found") ||
+      rawMessage.includes("Permission denied") ||
+      rawMessage.includes("Authentication required") ||
+      rawMessage.includes("exceeds safe atomic limit") ||
+      rawMessage.includes("pending permanent deletion")
+    ) {
+      throw new Error(rawMessage);
     }
-    
-    const parentData = parentSnap.data();
-
-    if (parentData.deleted) {
-      throw new Error("Destination parent not found");
-    }
-    
-    // Validate same space
-    if (parentData.spaceId !== spaceId) {
-      throw new Error("Cannot move document to a different space");
-    }
-
-    // Prevent cycle (moving under a descendant)
-    if ((parentData.path || []).includes(id)) {
-      throw new Error("Cannot move a document under its own descendant");
-    }
-    
-    destinationDepth = (parentData.path?.length || 0) + 1;
-    newPath = calculateNewPath(parentData.path, newParentId);
+    throw new Error("Failed to move document. Please try again.");
   }
-
-  // Find all descendants
-  const descendantsQuery = query(
-    collection(db, "documents"),
-    where("spaceId", "==", spaceId),
-    where("path", "array-contains", id)
-  );
-  
-  const descendantsSnap = await getDocs(descendantsQuery);
-
-  // Validate 4-level hierarchy depth invariant: destination depth + moved subtree height <= 4
-  const descendantPaths = descendantsSnap.docs.map((d) => d.data().path || []);
-  const subtreeHeight = calculateSubtreeHeightFromPaths(id, descendantPaths);
-
-  if (destinationDepth + subtreeHeight > 4) {
-    throw new Error("Moving this document exceeds the maximum hierarchy depth of 4 levels");
-  }
-  
-  // Use a single batch for atomicity. If limit (500) exceeded, it will fail safely.
-  const batch = writeBatch(db);
-  
-  if (descendantsSnap.docs.length + 1 > 500) {
-     throw new Error("Move operation exceeds batch limits (500 docs). Too many descendants.");
-  }
-  
-  // Update the moved document
-  batch.update(docRef, {
-    parentId: newParentId,
-    path: newPath,
-    updatedAt: serverTimestamp()
-  });
-
-  // Update descendants
-  descendantsSnap.docs.forEach((descendantDoc) => {
-    const descendantData = descendantDoc.data();
-    const oldPath = descendantData.path || [];
-    const index = oldPath.indexOf(id);
-    
-    if (index !== -1) {
-      const descendantNewPath = calculateDescendantPath(oldPath, id, newPath);
-      
-      batch.update(descendantDoc.ref, {
-        path: descendantNewPath,
-        updatedAt: serverTimestamp()
-      });
-    }
-  });
-
-  await batch.commit();
 }

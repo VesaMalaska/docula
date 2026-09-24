@@ -9,9 +9,20 @@ import { useAuth } from "@/components/providers/auth-provider";
 import Link from "next/link";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { useState, useRef, useEffect } from "react";
-import { Space } from "@/lib/types";
+import type { Space, RestoreDestination } from "@/lib/types";
 import { calculateListFallback } from "@/lib/focus-fallback";
 import { useToast } from "@/components/ui/use-toast";
+import { MoveDocumentDialog } from "@/components/move-document-dialog";
+import { cn } from "@/lib/utils";
+import { calculateDeletedDocumentSubtreeHeight } from "@/lib/utils/hierarchy";
+import {
+    evaluateRestoreResult,
+    createInitialRestorePayload,
+    formatRestorePayload,
+    resolvePickerDestination,
+    handlePickerCancel,
+    type RehomeDocState,
+} from "@/lib/utils/trash-restore";
 
 export default function TrashbinPage() {
     const { user } = useAuth();
@@ -101,6 +112,7 @@ function TrashSpaceSection({
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [documentToDelete, setDocumentToDelete] = useState<string | null>(null);
+    const [rehomeDoc, setRehomeDoc] = useState<RehomeDocState | null>(null);
     const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -114,10 +126,27 @@ function TrashSpaceSection({
     });
 
     const { mutate: restore, isPending: isRestoring } = useMutation({
-        mutationFn: restoreDocument,
-        onSuccess: () => {
+        mutationFn: async ({ docId, destination }: { docId: string; destination: RestoreDestination }) => {
+            return await restoreDocument(docId, destination);
+        },
+        onSuccess: (result, variables) => {
+             const doc = documents?.find((d) => d.id === variables.docId) || { id: variables.docId };
+             const subtreeHeight = calculateDeletedDocumentSubtreeHeight(variables.docId, documents || []);
+             const action = evaluateRestoreResult(result, { ...doc, subtreeHeight });
+             if (action.type === "OPEN_DESTINATION_PICKER") {
+                 setRehomeDoc(action.rehomeDoc);
+                 toast({
+                     title: "New destination required",
+                     description: action.explanation,
+                 });
+                 return;
+             }
              queryClient.invalidateQueries({ queryKey: ["deleted-documents", space.id] });
              queryClient.invalidateQueries({ queryKey: ["sidebar-tree", space.id] });
+             setRehomeDoc(null);
+             toast({
+                 title: "Restored successfully",
+             });
         },
         onError: (err: unknown) => {
              pendingRestoreRef.current = null;
@@ -126,6 +155,12 @@ function TrashSpaceSection({
                  toast({
                      title: "Cannot restore document",
                      description: "This document is pending permanent deletion and cannot be restored.",
+                     variant: "destructive",
+                 });
+             } else if (message.includes("deleted subtree")) {
+                 toast({
+                     title: "Part of a deleted subtree",
+                     description: message,
                      variant: "destructive",
                  });
              } else {
@@ -181,12 +216,21 @@ function TrashSpaceSection({
     };
 
     const handleRestoreClick = (docId: string) => {
+        const doc = documents?.find((d) => d.id === docId);
+        if (doc?.deletionGroupId && doc.deletionGroupRootId !== doc.id) {
+            toast({
+                title: "Part of a deleted subtree",
+                description: "This document is part of a deleted subtree. Restore the entire group from the root document.",
+            });
+            return;
+        }
+
         const fallback = calculateListFallback(documents || [], docId);
         pendingRestoreRef.current = {
             targetId: fallback.type === "item" ? fallback.id : null,
             isPointer: isPointerRestoreRef.current,
         };
-        restore(docId);
+        restore(createInitialRestorePayload(docId));
     };
 
     useEffect(() => {
@@ -246,56 +290,88 @@ function TrashSpaceSection({
                     <div className="col-span-2 text-right">Actions</div>
                 </div>
 
-                {documents.map((doc) => (
-                    <div
-                        key={doc.id}
-                        ref={(el) => {
-                            if (el) rowRefs.current.set(doc.id, el);
-                            else rowRefs.current.delete(doc.id);
-                        }}
-                        tabIndex={-1}
-                        aria-label={`Deleted document: ${doc.title}`}
-                        className="grid grid-cols-12 gap-4 p-4 items-center text-sm hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
-                    >
-                        <div className="col-span-12 md:col-span-5 font-medium flex items-center gap-2 truncate">
-                            <span className="truncate">{doc.title}</span>
+                {documents.map((doc) => {
+                    const isGroupRoot = !!doc.deletionGroupId && doc.deletionGroupRootId === doc.id;
+                    const isGroupMember = !!doc.deletionGroupId && doc.deletionGroupRootId !== doc.id;
+
+                    return (
+                        <div
+                            key={doc.id}
+                            ref={(el) => {
+                                if (el) rowRefs.current.set(doc.id, el);
+                                else rowRefs.current.delete(doc.id);
+                            }}
+                            tabIndex={-1}
+                            aria-label={`Deleted document: ${doc.title}`}
+                            className="grid grid-cols-12 gap-4 p-4 items-center text-sm hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+                        >
+                            <div className="col-span-12 md:col-span-5 font-medium flex items-center gap-2 truncate">
+                                <span className="truncate">{doc.title}</span>
+                                {isGroupRoot && (
+                                    <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded border ml-1 shrink-0 font-normal">
+                                        Subtree ({doc.deletionGroupCount || "group"})
+                                    </span>
+                                )}
+                                {isGroupMember && (
+                                    <span className="text-xs text-muted-foreground italic ml-1 shrink-0 font-normal">
+                                        (Group item)
+                                    </span>
+                                )}
+                            </div>
+                            <div className="col-span-3 md:block hidden truncate text-muted-foreground">
+                                {doc.deletedBy === user?.uid ? "Me" : (doc.deletedBy || "Unknown")}
+                            </div>
+                            <div className="col-span-2 md:block hidden text-muted-foreground">
+                                {doc.deletedAt ? format(doc.deletedAt.toDate(), "MMM d, yyyy") : "-"}
+                            </div>
+                            <div className="col-span-2 flex items-center justify-end gap-2 ml-auto">
+                                <button
+                                    type="button"
+                                    onPointerDown={() => { isPointerRestoreRef.current = true; }}
+                                    onKeyDown={() => { isPointerRestoreRef.current = false; }}
+                                    onClick={() => handleRestoreClick(doc.id)}
+                                    disabled={isRestoring || isDeleting || isGroupMember}
+                                    className={cn(
+                                        "p-2 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                        isGroupMember
+                                            ? "opacity-30 cursor-not-allowed text-muted-foreground"
+                                            : "hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 cursor-pointer"
+                                    )}
+                                    title={
+                                        isGroupMember
+                                            ? "Restore the entire group from the group root"
+                                            : isGroupRoot
+                                            ? `Restore subtree (${doc.deletionGroupCount || "group"} documents)`
+                                            : "Restore document"
+                                    }
+                                    aria-label={
+                                        isGroupMember
+                                            ? `Part of deleted subtree: restore from root`
+                                            : isGroupRoot
+                                            ? `Restore subtree ${doc.title}`
+                                            : `Restore document ${doc.title}`
+                                    }
+                                >
+                                    <RefreshCw className="h-4 w-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    ref={(el) => {
+                                        if (el) triggerRefs.current.set(doc.id, el);
+                                        else triggerRefs.current.delete(doc.id);
+                                    }}
+                                    onClick={() => handleDeleteClick(doc.id)}
+                                    disabled={isRestoring || isDeleting}
+                                    className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    title="Delete permanently"
+                                    aria-label={`Delete document ${doc.title} permanently`}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            </div>
                         </div>
-                        <div className="col-span-3 md:block hidden truncate text-muted-foreground">
-                            {doc.deletedBy === user?.uid ? "Me" : (doc.deletedBy || "Unknown")}
-                        </div>
-                        <div className="col-span-2 md:block hidden text-muted-foreground">
-                            {doc.deletedAt ? format(doc.deletedAt.toDate(), "MMM d, yyyy") : "-"}
-                        </div>
-                        <div className="col-span-2 flex items-center justify-end gap-2 ml-auto">
-                            <button 
-                                type="button"
-                                onPointerDown={() => { isPointerRestoreRef.current = true; }}
-                                onKeyDown={() => { isPointerRestoreRef.current = false; }}
-                                onClick={() => handleRestoreClick(doc.id)}
-                                disabled={isRestoring || isDeleting}
-                                className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title="Restore document"
-                                aria-label={`Restore document ${doc.title}`}
-                            >
-                                <RefreshCw className="h-4 w-4" />
-                            </button>
-                            <button 
-                                type="button"
-                                ref={(el) => {
-                                    if (el) triggerRefs.current.set(doc.id, el);
-                                    else triggerRefs.current.delete(doc.id);
-                                }}
-                                onClick={() => handleDeleteClick(doc.id)}
-                                disabled={isRestoring || isDeleting}
-                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title="Delete permanently"
-                                aria-label={`Delete document ${doc.title} permanently`}
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </button>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
              </div>
 
              <AlertDialog
@@ -310,6 +386,25 @@ function TrashSpaceSection({
                 returnFocusRef={returnFocusRef}
                 actionReturnFocusRef={actionReturnFocusRef}
             />
+
+            {rehomeDoc && (
+                <MoveDocumentDialog
+                    isOpen={!!rehomeDoc}
+                    onClose={() => setRehomeDoc(handlePickerCancel())}
+                    spaceId={space.id}
+                    documentId={rehomeDoc.id}
+                    currentParentId={null}
+                    documentTitle={rehomeDoc.title}
+                    subtreeHeight={rehomeDoc.subtreeHeight}
+                    customTitle="Select restoration destination"
+                    customDescription={`The original parent document is no longer available. Select a new location to restore "${rehomeDoc.title}".`}
+                    submitLabel="Restore to destination"
+                    customAction={async (selectedParentId) => {
+                        const destination = resolvePickerDestination(selectedParentId);
+                        await restore(formatRestorePayload(rehomeDoc.id, destination));
+                    }}
+                />
+            )}
         </div>
     );
 }
