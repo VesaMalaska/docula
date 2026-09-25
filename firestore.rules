@@ -15,7 +15,8 @@ service cloud.firestore {
     }
 
     function isSpaceActive(spaceData) {
-      return !('deletedAt' in spaceData) || spaceData.deletedAt == null;
+      return (!('deletedAt' in spaceData) || spaceData.deletedAt == null) &&
+        (!('purgeState' in spaceData) || spaceData.purgeState == null);
     }
 
     function isSpaceReader(spaceData) {
@@ -45,7 +46,8 @@ service cloud.firestore {
     function canCleanupDocument(spaceId) {
       return spaceExists(spaceId) &&
         isSpaceOwner(getSpaceData(spaceId)) &&
-        !isSpaceActive(getSpaceData(spaceId));
+        !isSpaceActive(getSpaceData(spaceId)) &&
+        (!('purgeState' in getSpaceData(spaceId)) || getSpaceData(spaceId).purgeState == null);
     }
 
     function canContributeToSpace(spaceId) {
@@ -215,6 +217,7 @@ service cloud.firestore {
     function isSoftDelete(spaceData, diff) {
       return isSpaceActive(spaceData) &&
         isSpaceOwner(spaceData) &&
+        (!('purgeState' in spaceData) || spaceData.purgeState == null) &&
         diff.affectedKeys().hasOnly(['deletedAt', 'deletedBy', 'updatedAt']) &&
         diff.affectedKeys().hasAny(['deletedAt', 'deletedBy']) &&
         request.resource.data.deletedAt != null &&
@@ -224,6 +227,7 @@ service cloud.firestore {
     function isRestore(spaceData, diff) {
       return !isSpaceActive(spaceData) &&
         isSpaceOwner(spaceData) &&
+        (!('purgeState' in spaceData) || spaceData.purgeState == null) &&
         diff.affectedKeys().hasOnly(['deletedAt', 'deletedBy', 'updatedAt']) &&
         diff.affectedKeys().hasAny(['deletedAt', 'deletedBy']) &&
         request.resource.data.deletedAt == null &&
@@ -247,7 +251,9 @@ service cloud.firestore {
       allow create: if isValidSpaceCreate();
       allow read: if isSpaceReader(resource.data);
       allow update: if isAuthenticated() && isValidSpaceUpdate(resource.data);
-      allow delete: if isAuthenticated() && isSpaceOwner(resource.data) && !isSpaceActive(resource.data);
+      // Direct-client Space deletion is closed. Space deletion must only occur
+      // server-authoritatively via Admin SDK after verifying no documents remain.
+      allow delete: if false;
     }
 
     match /documents/{documentId} {

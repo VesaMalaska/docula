@@ -72,4 +72,6 @@ export interface Space {
   updatedAt: Timestamp;
   deletedAt?: Timestamp | null;
   deletedBy?: string | null;
+  purgeState?: "purging" | null;
+  purgeStartedAt?: Timestamp | null;
 }

@@ -10,11 +10,10 @@ import {
   where, 
   serverTimestamp,
   orderBy,
-  deleteDoc,
   arrayUnion,
   runTransaction
 } from "firebase/firestore";
-import { Space } from "@/lib/types";
+import type { Space } from "@/lib/types";
 import { validateSpaceName } from "@/lib/space-validation";
 import { validateMemberEmail, canRemoveMember, canLeaveSpace } from "@/lib/member-management";
 
@@ -308,7 +307,10 @@ export async function getDeletedSpacesForUser(userId: string): Promise<Space[]> 
     return spaces;
 }
 
-export async function deleteSpace(spaceId: string, userIdArg?: string) {
+export async function deleteSpace(spaceId: string, userIdArg?: string): Promise<void> {
+    if (!spaceId || typeof spaceId !== "string") {
+        throw new Error("Invalid space identifier");
+    }
     const currentUser = auth.currentUser;
     if (!currentUser) {
         throw new Error("You must be signed in to delete a space.");
@@ -318,75 +320,137 @@ export async function deleteSpace(spaceId: string, userIdArg?: string) {
         throw new Error("Cannot delete a space on behalf of another user.");
     }
     const spaceRef = doc(db, "spaces", spaceId);
-    const spaceSnap = await getDoc(spaceRef);
-    if (!spaceSnap.exists()) throw new Error("Space not found.");
-    if (spaceSnap.data().ownerId !== resolvedUserId) {
-        throw new Error("Only the space owner can delete this space.");
-    }
-    await updateDoc(spaceRef, {
-        deletedAt: serverTimestamp(),
-        deletedBy: resolvedUserId,
-        updatedAt: serverTimestamp(),
+    await runTransaction(db, async (transaction) => {
+        const spaceSnap = await transaction.get(spaceRef);
+        if (!spaceSnap.exists()) throw new Error("Space not found.");
+        const data = spaceSnap.data();
+        if (data.ownerId !== resolvedUserId) {
+            throw new Error("Only the space owner can delete this space.");
+        }
+        if (data.deletedAt) {
+            throw new Error("Space is already deleted.");
+        }
+        if (data.purgeState) {
+            throw new Error("Cannot delete a space that is being permanently deleted.");
+        }
+        transaction.update(spaceRef, {
+            deletedAt: serverTimestamp(),
+            deletedBy: resolvedUserId,
+            updatedAt: serverTimestamp(),
+        });
     });
 }
 
-export async function restoreSpace(spaceId: string) {
-    const spaceRef = doc(db, "spaces", spaceId);
-    const spaceSnap = await getDoc(spaceRef);
-    if (!spaceSnap.exists()) throw new Error("Space not found.");
-    const currentUser = auth.currentUser;
-    if (!currentUser || spaceSnap.data().ownerId !== currentUser.uid) {
-        throw new Error("Only the space owner can restore this space.");
+export async function restoreSpace(spaceId: string): Promise<void> {
+    if (!spaceId || typeof spaceId !== "string") {
+        throw new Error("Invalid space identifier");
     }
-    await updateDoc(spaceRef, {
-        deletedAt: null,
-        deletedBy: null
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+        throw new Error("You must be signed in to restore a space.");
+    }
+    const resolvedUserId = currentUser.uid;
+    const spaceRef = doc(db, "spaces", spaceId);
+    await runTransaction(db, async (transaction) => {
+        const spaceSnap = await transaction.get(spaceRef);
+        if (!spaceSnap.exists()) throw new Error("Space not found.");
+        const data = spaceSnap.data();
+        if (data.ownerId !== resolvedUserId) {
+            throw new Error("Only the space owner can restore this space.");
+        }
+        if (!data.deletedAt) {
+            throw new Error("Cannot restore an active space.");
+        }
+        if (data.purgeState) {
+            throw new Error("Cannot restore a space that is being permanently deleted.");
+        }
+        transaction.update(spaceRef, {
+            deletedAt: null,
+            deletedBy: null,
+            updatedAt: serverTimestamp(),
+        });
     });
 }
 
-import { permanentDeleteImages } from "./s3";
-import { extractImageUrls } from "../utils";
+import { purgeSpaceStepAction } from "./space-purge";
 
-export async function permanentlyDeleteSpace(spaceId: string) {
-    const spaceRef = doc(db, "spaces", spaceId);
-    const spaceSnap = await getDoc(spaceRef);
-    if (!spaceSnap.exists()) throw new Error("Space not found.");
+const SAFE_PURGE_MESSAGES = new Set([
+    "Failed to delete space images during permanent purge. Please try again.",
+    "Purge stalled: no documents could be processed. Please retry.",
+    "Failed to permanently delete space. Please try again.",
+    "Failed to permanently delete space. You can retry.",
+    "Permission denied: only space owner can permanently delete this space",
+    "Cannot permanently delete an active space. Soft-delete it first.",
+    "You must be signed in to permanently delete a space.",
+    "Invalid space identifier",
+    "Space not found",
+    "Space not found.",
+]);
+
+export function getSafePurgeErrorMessage(err: unknown): string {
+    const fallback = "Failed to permanently delete space. You can retry.";
+    if (err instanceof Error && typeof err.message === "string" && SAFE_PURGE_MESSAGES.has(err.message)) {
+        return err.message;
+    }
+    return fallback;
+}
+
+export async function permanentlyDeleteSpace(
+    spaceId: string,
+    onProgress?: (progress: { processedCount: number; done: boolean }) => void
+): Promise<void> {
+    if (!spaceId || typeof spaceId !== "string") {
+        throw new Error("Invalid space identifier");
+    }
     const currentUser = auth.currentUser;
-    if (!currentUser || spaceSnap.data().ownerId !== currentUser.uid) {
-        throw new Error("Only the space owner can permanently delete this space.");
+    if (!currentUser) {
+        throw new Error("You must be signed in to permanently delete a space.");
     }
-    const data = spaceSnap.data();
-    if (!data.deletedAt) {
-        throw new Error("Cannot permanently delete an active space. Soft-delete it first.");
-    }
-    // 1. Permanently delete all documents in the soft-deleted space (owner cleanup)
-    const q = query(collection(db, "documents"), where("spaceId", "==", spaceId));
-    const querySnapshot = await getDocs(q);
-    
-    const idToken = await currentUser.getIdToken();
-    const deletePromises = querySnapshot.docs.map(async (docSnap) => {
-        const docData = docSnap.data();
-        let content = docData.content;
-        const contentRef = doc(db, "documents", docSnap.id, "content", "main");
-        const contentSnap = await getDoc(contentRef);
-        if (contentSnap.exists()) {
-            content = contentSnap.data()?.content ?? content;
+
+    let done = false;
+    let totalProcessed = 0;
+    let consecutiveStalls = 0;
+
+    while (!done) {
+        let idToken: string;
+        try {
+            idToken = await currentUser.getIdToken();
+        } catch (tokenErr) {
+            console.error("Failed to acquire auth token for space purge:", tokenErr);
+            throw new Error("Failed to permanently delete space. Please try again.");
         }
 
-        if (content) {
-            const imageUrls = extractImageUrls(content);
-            if (imageUrls.length > 0) {
-                await permanentDeleteImages(idToken, spaceId, docSnap.id, imageUrls);
+        let result;
+        try {
+            result = await purgeSpaceStepAction(idToken, spaceId);
+        } catch (err: unknown) {
+            if (
+                (totalProcessed > 0 || consecutiveStalls > 0) &&
+                err instanceof Error &&
+                (err.message === "Space not found" || err.message === "Space not found.")
+            ) {
+                done = true;
+                if (onProgress) {
+                    onProgress({ processedCount: totalProcessed, done: true });
+                }
+                break;
             }
+            throw new Error(getSafePurgeErrorMessage(err));
         }
 
-        if (contentSnap.exists()) {
-            await deleteDoc(contentRef);
+        if (result.processedCount === 0 && !result.done) {
+            consecutiveStalls++;
+            if (consecutiveStalls >= 3) {
+                throw new Error("Purge stalled: no documents could be processed. Please retry.");
+            }
+            continue;
         }
-        await deleteDoc(docSnap.ref);
-    });
-    await Promise.all(deletePromises);
 
-    // 2. Delete the space itself
-    await deleteDoc(spaceRef);
+        consecutiveStalls = 0;
+        totalProcessed += result.processedCount;
+        done = result.done;
+        if (onProgress) {
+            onProgress({ processedCount: totalProcessed, done });
+        }
+    }
 }

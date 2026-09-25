@@ -29,6 +29,9 @@ export async function authorizeSpaceReader(uid: string, spaceId: string) {
     if (spaceData.deletedAt) {
         throw new Error("Space is deleted");
     }
+    if (spaceData.purgeState) {
+        throw new Error("Space is being purged");
+    }
 
     const isPublic = spaceData.isPublic === true;
     const isOwner = spaceData.ownerId === uid;
@@ -54,6 +57,9 @@ export async function authorizeSpaceContributor(uid: string, spaceId: string) {
     
     if (spaceData.deletedAt) {
         throw new Error("Space is deleted");
+    }
+    if (spaceData.purgeState) {
+        throw new Error("Space is being purged");
     }
 
     const isOwner = spaceData.ownerId === uid;

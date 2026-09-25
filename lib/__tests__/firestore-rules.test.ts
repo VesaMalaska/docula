@@ -784,8 +784,8 @@ if (!isEmulatorRunning) {
         // 4. Non-owner cannot permanently delete soft-deleted space
         await assertFails(deleteDoc(doc(bob, "spaces", deleteSpaceId)));
 
-        // 5. Owner can permanently delete soft-deleted space
-        await assertSucceeds(deleteDoc(doc(alice, "spaces", deleteSpaceId)));
+        // 5. Direct client space deletion is closed in rules (must use server action)
+        await assertFails(deleteDoc(doc(alice, "spaces", deleteSpaceId)));
       });
 
       test("cannot soft-delete an already soft-deleted space", async () => {
@@ -947,10 +947,101 @@ if (!isEmulatorRunning) {
           deleteDoc(doc(alice, "documents", docInDeletedSpaceId))
         );
 
-        // 14. Owner CAN permanently delete the deleted space itself
-        await assertSucceeds(
+        // 14. Direct client space deletion is closed in rules (must use server action)
+        await assertFails(
           deleteDoc(doc(alice, "spaces", publicDeletedSpaceId))
         );
+      });
+    });
+
+    describe("Space Permanent Purge and Direct Deletion Restrictions (Rules Integrity)", () => {
+      const purgeSpaceId = "space-purge-rules-test";
+      const purgeDocId = "doc-purge-rules-test";
+
+      beforeEach(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+          await setDoc(doc(db, "spaces", purgeSpaceId), {
+            name: "Purge Rules Space",
+            isPublic: false,
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: new Date(),
+            deletedBy: "alice",
+            purgeState: "purging",
+          });
+
+          await setDoc(doc(db, "documents", purgeDocId), {
+            title: "Doc in Purging Space",
+            spaceId: purgeSpaceId,
+            parentId: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        });
+      });
+
+      test("direct-client space deletion is completely closed in rules for owner, member, and non-member", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const charlie = testEnv.authenticatedContext("charlie").firestore();
+
+        await assertFails(deleteDoc(doc(alice, "spaces", purgeSpaceId)));
+        await assertFails(deleteDoc(doc(bob, "spaces", purgeSpaceId)));
+        await assertFails(deleteDoc(doc(charlie, "spaces", purgeSpaceId)));
+      });
+
+      test("restoration is blocked by rules once purge has started (purgeState set)", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        // Alice (owner) cannot restore space when purgeState is set
+        await assertFails(
+          updateDoc(doc(alice, "spaces", purgeSpaceId), {
+            deletedAt: null,
+            deletedBy: null,
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Bob (non-owner) cannot restore space
+        await assertFails(
+          updateDoc(doc(bob, "spaces", purgeSpaceId), {
+            deletedAt: null,
+            deletedBy: null,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("document writes and direct document cleanup are blocked by rules once purge has started", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        // Document create blocked
+        await assertFails(
+          setDoc(doc(alice, "documents", "new-doc-purging"), {
+            title: "New Doc",
+            spaceId: purgeSpaceId,
+            parentId: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Document update blocked
+        await assertFails(
+          updateDoc(doc(alice, "documents", purgeDocId), {
+            title: "Updated Title",
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Direct client document cleanup delete blocked once purge has started
+        await assertFails(deleteDoc(doc(alice, "documents", purgeDocId)));
+        await assertFails(deleteDoc(doc(bob, "documents", purgeDocId)));
       });
     });
 
@@ -1321,13 +1412,13 @@ if (!isEmulatorRunning) {
         assert.equal(discoveredImages.length, 1);
         assert.equal(discoveredImages[0], "https://my-bucket.s3.us-east-1.amazonaws.com/uploads/diagram.png");
 
-        // Step 3: Delete the space document itself
-        await assertSucceeds(deleteDoc(doc(alice, "spaces", cascadeSpaceId)));
+        // Step 3: Direct-client Space deletion is closed in rules (must use server action)
+        await assertFails(deleteDoc(doc(alice, "spaces", cascadeSpaceId)));
 
-        // Step 4: Verify complete erasure of all records
+        // Step 4: Verify complete erasure of document records while space record remains for server action
         await testEnv.withSecurityRulesDisabled(async (context) => {
           const db = context.firestore();
-          assert.equal((await getDoc(doc(db, "spaces", cascadeSpaceId))).exists(), false);
+          assert.equal((await getDoc(doc(db, "spaces", cascadeSpaceId))).exists(), true);
           assert.equal((await getDoc(doc(db, "documents", cascadeDoc1Id))).exists(), false);
           assert.equal((await getDoc(doc(db, `documents/${cascadeDoc1Id}/content`, "main"))).exists(), false);
           assert.equal((await getDoc(doc(db, "documents", cascadeDoc2Id))).exists(), false);
@@ -1427,8 +1518,8 @@ if (!isEmulatorRunning) {
         await assertSucceeds(getDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
         await assertSucceeds(deleteDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
         await assertSucceeds(deleteDoc(doc(alice, "documents", activeDocId)));
-        // - Alice (owner) CAN permanently delete the soft-deleted space
-        await assertSucceeds(deleteDoc(doc(alice, "spaces", activeSpaceId)));
+        // - Direct client space deletion is closed in rules (must use server action)
+        await assertFails(deleteDoc(doc(alice, "spaces", activeSpaceId)));
       });
     });
 
@@ -2568,12 +2659,12 @@ if (!isEmulatorRunning) {
         );
       });
 
-      test("required owner-only deleted-Space cleanup remains possible", async () => {
+      test("required owner-only deleted-Space cleanup of documents remains possible, but direct Space deletion is closed", async () => {
         const alice = testEnv.authenticatedContext("alice").firestore();
 
         await assertSucceeds(deleteDoc(doc(alice, `documents/${docInDeletedSpaceId}/content`, "main")));
         await assertSucceeds(deleteDoc(doc(alice, "documents", docInDeletedSpaceId)));
-        await assertSucceeds(deleteDoc(doc(alice, "spaces", deletedSpaceId)));
+        await assertFails(deleteDoc(doc(alice, "spaces", deletedSpaceId)));
       });
 
       test("ordinary members cannot perform deleted-Space cleanup", async () => {

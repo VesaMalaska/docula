@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getDeletedDocuments, restoreDocument, permanentlyDeleteDocument } from "@/lib/actions/document";
-import { getSpacesForUser, getDeletedSpacesForUser, restoreSpace, permanentlyDeleteSpace } from "@/lib/actions/spaces";
+import { getSpacesForUser, getDeletedSpacesForUser, restoreSpace, permanentlyDeleteSpace, getSafePurgeErrorMessage } from "@/lib/actions/spaces";
 import { format } from "date-fns";
 import { Loader2, RefreshCw, Trash2, ArrowLeft, Archive } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -420,8 +420,10 @@ function DeletedSpacesSection({
     headerBackRef: React.RefObject<HTMLAnchorElement | null>;
     mainRef: React.RefObject<HTMLDivElement | null>;
 }) {
+    const { toast } = useToast();
     const queryClient = useQueryClient();
     const [spaceToDelete, setSpaceToDelete] = useState<string | null>(null);
+    const [purgeProgress, setPurgeProgress] = useState<{ spaceId: string; processedCount: number } | null>(null);
     const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
     const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -434,21 +436,60 @@ function DeletedSpacesSection({
         onSuccess: () => {
              queryClient.invalidateQueries({ queryKey: ["deleted-spaces"] });
              queryClient.invalidateQueries({ queryKey: ["user-spaces"] });
+             toast({
+                 title: "Space restored",
+                 description: "The space has been restored successfully.",
+             });
         },
-        onError: () => {
+        onError: (err: unknown) => {
              pendingRestoreRef.current = null;
+             const rawMessage = err instanceof Error ? err.message : "";
+             const isSafe =
+                 rawMessage === "Space not found." ||
+                 rawMessage === "Only the space owner can restore this space." ||
+                 rawMessage === "Cannot restore an active space." ||
+                 rawMessage === "Cannot restore a space that is being permanently deleted." ||
+                 rawMessage === "Invalid space identifier" ||
+                 rawMessage === "You must be signed in to restore a space.";
+             const message = isSafe ? rawMessage : "Failed to restore space. Please try again.";
+             toast({
+                 title: "Restore failed",
+                 description: message,
+                 variant: "destructive",
+             });
         },
     });
 
     const { mutate: removeForever, isPending: isDeleting } = useMutation({
-        mutationFn: permanentlyDeleteSpace,
+        mutationFn: async (spaceId: string) => {
+            await permanentlyDeleteSpace(spaceId, (progress) => {
+                setPurgeProgress({ spaceId, processedCount: progress.processedCount });
+            });
+        },
         onSuccess: () => {
+             setPurgeProgress(null);
              queryClient.invalidateQueries({ queryKey: ["deleted-spaces"] });
              setSpaceToDelete(null);
+             toast({
+                 title: "Space permanently deleted",
+                 description: "The space and all its documents were removed.",
+             });
+        },
+        onError: (err: unknown) => {
+             setPurgeProgress(null);
+             setSpaceToDelete(null);
+             queryClient.invalidateQueries({ queryKey: ["deleted-spaces"] });
+             const message = getSafePurgeErrorMessage(err);
+             toast({
+                 title: "Space purge incomplete",
+                 description: message,
+                 variant: "destructive",
+             });
         },
     });
 
     const handleDeleteClick = (targetSpace: Space) => {
+        if (isDeleting) return;
         const trigger = triggerRefs.current.get(targetSpace.id);
         returnFocusRef.current = trigger || null;
 
@@ -496,21 +537,11 @@ function DeletedSpacesSection({
         }
     }, [deletedSpaces, headerBackRef, mainRef]);
 
+    const activeSpaceToDelete = deletedSpaces.find((s) => s.id === spaceToDelete);
+    const isTargetPurging = activeSpaceToDelete?.purgeState === "purging";
+
     if (deletedSpaces.length === 0) {
-        return (
-            <AlertDialog
-                isOpen={!!spaceToDelete}
-                onClose={() => !isDeleting && setSpaceToDelete(null)}
-                title="Permanently Delete Space"
-                description="Are you sure you want to permanently delete this space? This action cannot be undone and will delete all documents inside it."
-                onAction={() => spaceToDelete && removeForever(spaceToDelete)}
-                variant="destructive"
-                isLoading={isDeleting}
-                actionLabel={isDeleting ? "Deleting..." : "Delete Forever"}
-                returnFocusRef={returnFocusRef}
-                actionReturnFocusRef={actionReturnFocusRef}
-            />
-        );
+        return null;
     }
 
     return (
@@ -518,6 +549,7 @@ function DeletedSpacesSection({
             <h2 className="text-xl font-semibold px-1">Deleted Spaces</h2>
             {deletedSpaces.map((space) => {
                 const isOwner = !!currentUserId && space.ownerId === currentUserId;
+                const isPurging = space.purgeState === "purging";
 
                 return (
                     <div
@@ -531,7 +563,14 @@ function DeletedSpacesSection({
                         className="rounded-md border bg-card p-4 flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <div className="flex flex-col flex-1 min-w-0">
-                            <span className="font-medium text-lg truncate">{space.name}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="font-medium text-lg truncate">{space.name}</span>
+                                {isPurging && (
+                                    <span className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-normal">
+                                        Purge incomplete — retry available
+                                    </span>
+                                )}
+                            </div>
                             <div className="text-sm text-muted-foreground flex gap-2">
                                 <span>Deleted {space.deletedAt ? format(space.deletedAt.toDate(), "MMM d, yyyy") : "-"}</span>
                             </div>
@@ -539,18 +578,20 @@ function DeletedSpacesSection({
                         <div className="flex items-center gap-2 shrink-0">
                             {isOwner ? (
                                 <>
-                                    <button
-                                        type="button"
-                                        onPointerDown={() => { isPointerRestoreRef.current = true; }}
-                                        onKeyDown={() => { isPointerRestoreRef.current = false; }}
-                                        onClick={() => handleRestoreClick(space.id)}
-                                        disabled={isRestoring || isDeleting}
-                                        className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                        title="Restore Space"
-                                        aria-label={`Restore Space ${space.name}`}
-                                    >
-                                        <RefreshCw className="h-4 w-4" />
-                                    </button>
+                                    {!isPurging ? (
+                                        <button
+                                            type="button"
+                                            onPointerDown={() => { isPointerRestoreRef.current = true; }}
+                                            onKeyDown={() => { isPointerRestoreRef.current = false; }}
+                                            onClick={() => handleRestoreClick(space.id)}
+                                            disabled={isRestoring || isDeleting}
+                                            className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-700 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                            title="Restore Space"
+                                            aria-label={`Restore Space ${space.name}`}
+                                        >
+                                            <RefreshCw className="h-4 w-4" />
+                                        </button>
+                                    ) : null}
                                     <button
                                         type="button"
                                         ref={(el) => {
@@ -560,8 +601,8 @@ function DeletedSpacesSection({
                                         onClick={() => handleDeleteClick(space)}
                                         disabled={isRestoring || isDeleting}
                                         className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-destructive hover:text-red-800 dark:hover:text-red-400 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                        title="Delete permanently"
-                                        aria-label={`Delete Space ${space.name} permanently`}
+                                        title={isPurging ? "Retry permanent deletion" : "Delete permanently"}
+                                        aria-label={isPurging ? `Retry permanent deletion for ${space.name}` : `Delete Space ${space.name} permanently`}
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </button>
@@ -580,12 +621,22 @@ function DeletedSpacesSection({
             <AlertDialog
                 isOpen={!!spaceToDelete}
                 onClose={() => !isDeleting && setSpaceToDelete(null)}
-                title="Permanently Delete Space"
-                description="Are you sure you want to permanently delete this space? This action cannot be undone and will delete all documents inside it."
-                onAction={() => spaceToDelete && removeForever(spaceToDelete)}
+                title={isTargetPurging ? "Resume Space Purge" : "Permanently Delete Space"}
+                description={
+                    isTargetPurging
+                        ? "This space's permanent deletion was interrupted. Do you want to continue purging all remaining documents and delete the space?"
+                        : "Are you sure you want to permanently delete this space? This action cannot be undone and will delete all documents inside it."
+                }
+                onAction={() => !isDeleting && spaceToDelete && removeForever(spaceToDelete)}
                 variant="destructive"
                 isLoading={isDeleting}
-                actionLabel={isDeleting ? "Deleting..." : "Delete Forever"}
+                actionLabel={
+                    isDeleting
+                        ? (purgeProgress && purgeProgress.processedCount > 0
+                            ? `Purging... (${purgeProgress.processedCount} deleted)`
+                            : "Purging...")
+                        : (isTargetPurging ? "Resume Purge" : "Delete Forever")
+                }
                 returnFocusRef={returnFocusRef}
                 actionReturnFocusRef={actionReturnFocusRef}
             />
