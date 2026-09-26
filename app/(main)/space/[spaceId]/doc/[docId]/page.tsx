@@ -8,7 +8,7 @@ import {
 } from "@/lib/actions/document";
 import { getSpace, joinSpace } from "@/lib/actions/spaces";
 import { acquireLock, releaseLock } from "@/lib/actions/locking";
-import { permanentizeImages, deleteImages } from "@/lib/actions/s3";
+import { permanentizeImages, deleteImages, cleanupRemovedDocumentImages } from "@/lib/actions/s3";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useParams, useSearchParams, useRouter, notFound } from "next/navigation";
 import { Editor } from "@/components/editor";
@@ -134,9 +134,33 @@ export default function DocPage() {
   const [content, setContent] = useState<any>(null);
   const [title, setTitle] = useState("");
   const [sessionImages, setSessionImages] = useState<string[]>([]);
+  const [baseRevision, setBaseRevision] = useState<number | null>(null);
 
   const isEditingRef = useRef(false);
   const sessionImagesRef = useRef<string[]>([]);
+  const [isRetryingCleanup, setIsRetryingCleanup] = useState(false);
+
+  const handleRetryCleanup = async () => {
+    if (!doc || isRetryingCleanup) return;
+    setIsRetryingCleanup(true);
+    try {
+      const idToken = await user?.getIdToken();
+      await cleanupRemovedDocumentImages(idToken, spaceId, id);
+      queryClient.invalidateQueries({ queryKey: ["doc", id] });
+      toast({
+        title: "Cleanup complete",
+        description: "Storage cleanup for removed images completed successfully.",
+      });
+    } catch (e) {
+      toast({
+        title: "Cleanup failed",
+        description: e instanceof Error ? e.message : "Storage cleanup failed. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRetryingCleanup(false);
+    }
+  };
 
   const { data: space } = useQuery({
     queryKey: ["space", spaceId],
@@ -184,6 +208,7 @@ export default function DocPage() {
         setTitle(doc.title);
         setSessionImages([]);
         sessionImagesRef.current = [];
+        setBaseRevision(doc.revision ?? 0);
       }
     }
   }, [doc, isEditing]);
@@ -255,6 +280,7 @@ export default function DocPage() {
       if (freshDoc) {
         setContent(freshDoc.content);
         setTitle(freshDoc.title);
+        setBaseRevision(freshDoc.revision ?? 0);
       }
       
       setIsEditing(true);
@@ -304,6 +330,7 @@ export default function DocPage() {
 
   const handleCancel = async () => {
     setIsEditing(false);
+    setBaseRevision(null);
     if (doc) {
       setContent(doc.content);
       setTitle(doc.title);
@@ -396,6 +423,7 @@ export default function DocPage() {
         if (imagesToPermanentize.length > 0) {
           const mapping = await permanentizeImages(idToken, spaceId, id, imagesToPermanentize);
           finalContent = replaceImageUrls(finalContent, mapping);
+          setContent(finalContent);
         }
 
         if (imagesToDelete.length > 0) {
@@ -403,18 +431,34 @@ export default function DocPage() {
         }
       }
 
-      await updateDocument(id, {
+      const result = await updateDocument(id, {
         title,
         content: finalContent,
+        baseRevision: baseRevision !== null ? baseRevision : (doc?.revision ?? 0),
       });
 
       setSessionImages([]);
       if (user) await releaseLock(id, user.uid);
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setIsEditing(false);
+      setBaseRevision(null);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
+      if (result?.cleanupPending) {
+        toast({
+          title: "Content saved",
+          description: "Document saved, but storage cleanup for removed images is pending. You can retry cleanup anytime.",
+        });
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to save document",
+        description: error instanceof Error ? error.message : "Your changes could not be saved. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -436,6 +480,25 @@ export default function DocPage() {
       />
       <div className="mx-auto max-w-4xl px-4 md:px-8">
         <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
+
+        {isContributor && doc.pendingImageCleanup && doc.pendingImageCleanup.length > 0 && (
+          <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-3 border border-amber-200 dark:border-amber-900/30 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+              <Info className="h-4 w-4 shrink-0" />
+              <span>Storage cleanup for removed images is pending.</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isRetryingCleanup}
+              onClick={handleRetryCleanup}
+              className="text-xs h-7 cursor-pointer"
+            >
+              {isRetryingCleanup ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Retry Cleanup
+            </Button>
+          </div>
+        )}
 
         {!isContributor && (
           <div className="mb-4 rounded-md bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-900/30">

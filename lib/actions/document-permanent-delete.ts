@@ -127,9 +127,7 @@ export async function permanentlyDeleteDocumentAction(
     const imageUrls = await getDocumentContentUrls(docId);
 
     // 7. Perform S3 cleanup (leaves claim in place on failure)
-    if (imageUrls && imageUrls.length > 0) {
-        await permanentDeleteImages(idToken, spaceId, docId, imageUrls);
-    }
+    await permanentDeleteImages(idToken, spaceId, docId, imageUrls || []);
 
     // 8. Atomically delete content and metadata with Admin batch (leaves claim in place on failure)
     const batch = db.batch();

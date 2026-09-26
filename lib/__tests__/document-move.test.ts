@@ -49,6 +49,7 @@ mock.module("../server/document-authorization", {
         getDocumentContentUrls: mock.fn(),
         extractCanonicalKey: mock.fn(),
         verifyLegacyKeyOwnership: mock.fn(),
+        isModernDocumentScopedKey: mock.fn(),
     },
 });
 
@@ -215,6 +216,7 @@ mock.module("firebase/firestore", {
         serverTimestamp: mock.fn(),
         DocumentSnapshot: class {},
         FirestoreError: class {},
+        deleteField: mock.fn(() => ({ _type: "delete" })),
     },
 });
 

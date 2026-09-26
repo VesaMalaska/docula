@@ -11,6 +11,7 @@ export interface Document {
   tags: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  revision?: number | null;
   lock: {
     active: boolean;
     userId: string;
@@ -28,6 +29,16 @@ export interface Document {
   deletionGroupId?: string | null;
   deletionGroupRootId?: string | null;
   deletionGroupCount?: number | null;
+  pendingImageCleanup?: string[] | null;
+  imageCleanupClaim?: ImageCleanupClaim | null;
+  retiredImageKeys?: string[] | null;
+}
+
+export interface ImageCleanupClaim {
+  claimId: string;
+  keys: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  claimedAt: any;
 }
 
 export interface PermanentDeletionClaim {
