@@ -223,7 +223,12 @@ function extractLinks(content: any): string[] {
   return Array.from(links);
 }
 
-export interface UpdateDocumentData extends Partial<Document> {
+export interface UpdateDocumentData {
+  id?: string;
+  title?: string;
+  tags?: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content?: any;
   baseRevision?: number | null;
   baseUpdatedAt?: Timestamp | Date | number | null;
 }

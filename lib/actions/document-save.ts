@@ -68,6 +68,50 @@ function getTimestampMillis(ts: unknown): number | null {
     return null;
 }
 
+const PROTECTED_FIELDS = new Set([
+    "spaceId",
+    "parentId",
+    "path",
+    "createdAt",
+    "updatedAt",
+    "revision",
+    "deleted",
+    "deletedAt",
+    "deletedBy",
+    "deletionGroupId",
+    "deletionGroupRootId",
+    "deletionGroupCount",
+    "restoreParentId",
+    "permanentDeletionClaim",
+    "lifecycleClaim",
+    "imageCleanupClaim",
+    "pendingImageCleanup",
+    "retiredImageKeys",
+    "backlinks",
+    "outboundLinks",
+    "lock",
+]);
+
+const ALLOWED_DATA_FIELDS = new Set([
+    "id",
+    "title",
+    "tags",
+    "content",
+    "baseRevision",
+    "baseUpdatedAt",
+]);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function canAffectTargetBacklink(targetSnap: any, docSpaceId: string): boolean {
+    if (!targetSnap || !targetSnap.exists) return false;
+    const targetData = typeof targetSnap.data === "function" ? targetSnap.data() : targetSnap.data;
+    if (!targetData) return false;
+    if (targetData.spaceId !== docSpaceId) return false;
+    if (targetData.deleted === true || targetData.deletedAt != null) return false;
+    if (targetData.permanentDeletionClaim || targetData.lifecycleClaim) return false;
+    return true;
+}
+
 export async function updateDocumentAction(
     idToken: string | undefined,
     id: string,
@@ -78,18 +122,43 @@ export async function updateDocumentAction(
         throw new Error("Invalid document ID");
     }
 
+    if (!data || typeof data !== "object") {
+        throw new Error("Invalid document data");
+    }
+
+    if (data.id !== undefined && data.id !== id) {
+        throw new Error("Cannot update document: document ID mismatch.");
+    }
+
+    for (const key of Object.keys(data)) {
+        if (PROTECTED_FIELDS.has(key)) {
+            throw new Error(`Cannot update document: field "${key}" is protected and cannot be modified directly.`);
+        }
+        if (!ALLOWED_DATA_FIELDS.has(key)) {
+            throw new Error(`Cannot update document: field "${key}" is not allowed.`);
+        }
+    }
+
+    if (data.title !== undefined && typeof data.title !== "string") {
+        throw new Error("Cannot update document: title must be a string.");
+    }
+
+    if (
+        data.tags !== undefined &&
+        (!Array.isArray(data.tags) || !data.tags.every((t) => typeof t === "string"))
+    ) {
+        throw new Error("Cannot update document: tags must be an array of strings.");
+    }
+
     const { uid } = await verifyIdToken(idToken);
 
     const db = getAdminFirestore();
     const docRef = db.collection("documents").doc(id);
     const contentRef = docRef.collection("content").doc("main");
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-    const { id: _, content: contentField, baseRevision: dataBaseRevision, baseUpdatedAt: dataBaseUpdatedAt, ...updateData } = data as any;
-    const baseRevision = options?.baseRevision !== undefined ? options.baseRevision : dataBaseRevision;
-    const baseUpdatedAt = options?.baseUpdatedAt !== undefined ? options.baseUpdatedAt : dataBaseUpdatedAt;
-
-    updateData.updatedAt = FieldValue.serverTimestamp();
+    const contentField = data.content;
+    const baseRevision = options?.baseRevision !== undefined ? options.baseRevision : data.baseRevision;
+    const baseUpdatedAt = options?.baseUpdatedAt !== undefined ? options.baseUpdatedAt : data.baseUpdatedAt;
 
     if (contentField !== undefined) {
         // Mandatory base revision validation for all content saves
@@ -150,18 +219,14 @@ export async function updateDocumentAction(
             const added = newOutboundLinks.filter((l: string) => !oldOutboundLinks.includes(l));
             const removed = oldOutboundLinks.filter((l: string) => !newOutboundLinks.includes(l));
 
-            // Pre-fetch all target documents for backlinks in Phase 1
-            const allTargetIds = [...new Set([...added, ...removed])];
+            // Pre-fetch all target documents for backlinks in Phase 1 (excluding self)
+            const allTargetIds = [...new Set([...added, ...removed])].filter((targetId) => targetId !== id);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const targetSnaps: Record<string, any> = {};
 
             for (const targetId of allTargetIds) {
-                if (targetId === id) {
-                    targetSnaps[targetId] = docSnap;
-                } else {
-                    const targetRef = db.collection("documents").doc(targetId);
-                    targetSnaps[targetId] = await transaction.get(targetRef);
-                }
+                const targetRef = db.collection("documents").doc(targetId);
+                targetSnaps[targetId] = await transaction.get(targetRef);
             }
 
             // Read previous content in Phase 1
@@ -220,10 +285,16 @@ export async function updateDocumentAction(
             const nextRevision = currentRevision + 1;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const docUpdatePayload: Record<string, any> = {
-                ...updateData,
+                updatedAt: FieldValue.serverTimestamp(),
                 revision: nextRevision,
                 outboundLinks: newOutboundLinks,
             };
+            if (data.title !== undefined) {
+                docUpdatePayload.title = data.title;
+            }
+            if (data.tags !== undefined) {
+                docUpdatePayload.tags = data.tags;
+            }
             if (hasPendingCleanup) {
                 docUpdatePayload.pendingImageCleanup = Array.from(pendingSet);
             } else if (currentDoc.pendingImageCleanup !== undefined) {
@@ -237,12 +308,12 @@ export async function updateDocumentAction(
 
             // Update added backlinks
             for (const targetId of added) {
-                const targetRef = db.collection("documents").doc(targetId);
+                if (targetId === id) continue;
                 const targetSnap = targetSnaps[targetId];
-
-                if (targetSnap && targetSnap.exists) {
-                    const targetData = targetSnap.data();
-                    const backlinks = targetData.backlinks || [];
+                if (canAffectTargetBacklink(targetSnap, docSpaceId)) {
+                    const targetRef = db.collection("documents").doc(targetId);
+                    const targetData = typeof targetSnap.data === "function" ? targetSnap.data() : targetSnap.data;
+                    const backlinks = Array.isArray(targetData.backlinks) ? targetData.backlinks : [];
                     if (!backlinks.includes(id)) {
                         transaction.update(targetRef, {
                             backlinks: [...backlinks, id],
@@ -253,16 +324,18 @@ export async function updateDocumentAction(
 
             // Update removed backlinks
             for (const targetId of removed) {
-                const targetRef = db.collection("documents").doc(targetId);
+                if (targetId === id) continue;
                 const targetSnap = targetSnaps[targetId];
-
-                if (targetSnap && targetSnap.exists) {
-                    const targetData = targetSnap.data();
-                    const backlinks = targetData.backlinks || [];
-                    const newBacklinks = backlinks.filter((bid: string) => bid !== id);
-                    transaction.update(targetRef, {
-                        backlinks: newBacklinks,
-                    });
+                if (canAffectTargetBacklink(targetSnap, docSpaceId)) {
+                    const targetRef = db.collection("documents").doc(targetId);
+                    const targetData = typeof targetSnap.data === "function" ? targetSnap.data() : targetSnap.data;
+                    const backlinks = Array.isArray(targetData.backlinks) ? targetData.backlinks : [];
+                    if (backlinks.includes(id)) {
+                        const newBacklinks = backlinks.filter((bid: string) => bid !== id);
+                        transaction.update(targetRef, {
+                            backlinks: newBacklinks,
+                        });
+                    }
                 }
             }
         });
@@ -317,6 +390,7 @@ export async function updateDocumentAction(
             }
 
             const currentRevision = typeof currentDoc.revision === "number" ? currentDoc.revision : 0;
+            let shouldBumpRevision = false;
             if (baseRevision !== undefined && baseRevision !== null) {
                 if (
                     typeof baseRevision !== "number" ||
@@ -328,7 +402,7 @@ export async function updateDocumentAction(
                         "Cannot save document: document has been modified by another edit. Please reload before saving."
                     );
                 }
-                updateData.revision = currentRevision + 1;
+                shouldBumpRevision = true;
             } else if (baseUpdatedAt !== undefined && baseUpdatedAt !== null) {
                 const currentMillis =
                     getTimestampMillis(currentDoc.updatedAt) ?? getTimestampMillis(currentDoc.createdAt);
@@ -340,7 +414,21 @@ export async function updateDocumentAction(
                 }
             }
 
-            transaction.update(docRef, updateData);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const docUpdatePayload: Record<string, any> = {
+                updatedAt: FieldValue.serverTimestamp(),
+            };
+            if (data.title !== undefined) {
+                docUpdatePayload.title = data.title;
+            }
+            if (data.tags !== undefined) {
+                docUpdatePayload.tags = data.tags;
+            }
+            if (shouldBumpRevision) {
+                docUpdatePayload.revision = currentRevision + 1;
+            }
+
+            transaction.update(docRef, docUpdatePayload);
         });
 
         return { contentSaved: true, cleanupPending: false };
