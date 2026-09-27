@@ -132,7 +132,7 @@ async function verifyAncestorsActive(
         if (!ancestorSnap.exists) {
             throw new Error(`Cannot save document: ancestor "${ancestorId}" not found.`);
         }
-        const ancestorData = typeof ancestorSnap.data === "function" ? ancestorSnap.data() : ancestorSnap.data;
+        const ancestorData = ancestorSnap.data();
         if (!ancestorData) {
             throw new Error(`Cannot save document: ancestor "${ancestorId}" data missing.`);
         }
