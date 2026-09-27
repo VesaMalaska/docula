@@ -4,6 +4,10 @@ Docula is a collaborative documentation app for organizing and writing team know
 
 > **Project status:** Docula is preparing its first public release. The current repository is a prerelease; deployment and setup still require your own Firebase project and AWS S3 bucket.
 
+## Why Docula exists
+
+Team knowledge becomes difficult to use when documents are scattered or their relationships are hard to see. Docula brings writing, organization, and collaboration into one workspace: Spaces give a team a home for its material, a document tree gives it structure, and links and backlinks make related information easier to follow. The project also explores what it takes to keep that workspace trustworthy when people edit, move, restore, and delete content concurrently.
+
 ## What you can do
 
 - Create private or public Spaces, invite members, and organize documents up to four levels deep.
@@ -23,6 +27,20 @@ Public Spaces can be read by signed-in users. Joining a public Space makes the u
 - Firebase Admin SDK for server actions and AWS S3 for document images
 - TanStack Query for client data fetching; Vercel for application deployment
 
+## How it works
+
+The Next.js App Router serves the workspace and editor. Tiptap manages rich-text content in the browser, while Firebase Authentication identifies users and Cloud Firestore stores Spaces, document metadata, and document content. TanStack Query keeps client views in sync with that data.
+
+Sensitive operations such as document saves, hierarchy changes, permanent deletion, and image lifecycle work run through server actions using the Firebase Admin SDK. Those actions verify the caller and current document state inside Firestore transactions. Firestore Security Rules also constrain direct client access; the server and Rules must be deployed together when their contract changes.
+
+Images live in S3. The application creates scoped upload requests and serves document images through an authorized route. Document and Space deletion clean up their associated images in bounded, retryable steps so a partial failure can be resumed. The implementation separates temporary uploads, active images, and images belonging to deleted documents.
+
+### Engineering notes
+
+- **Concurrent edits:** Document content saves use revision checks, so an older editor view cannot silently overwrite a newer save.
+- **Hierarchy integrity:** Server transactions recheck ownership, parent state, and document ancestry while moving or changing lifecycle state.
+- **Recoverable cleanup:** Permanent Space deletion works through bounded steps. Removed-image cleanup records and claims pending keys before deleting S3 objects, then reconciles the result with Firestore.
+
 ## Run locally
 
 ### Prerequisites
@@ -40,30 +58,13 @@ Public Spaces can be read by signed-in users. Joining a public Space makes the u
    pnpm install
    ```
 
-2. Create `.env.local` at the repository root. Copy values from your Firebase web app configuration, Firebase service account, and S3 setup:
+2. Copy the [environment template](.env.example) and fill in values from your Firebase web app configuration, Firebase service account, and S3 setup:
 
-   ```dotenv
-   # Firebase web app (sent to the browser)
-   NEXT_PUBLIC_FIREBASE_API_KEY=your_web_api_key
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-
-   # Firebase Admin (server only)
-   FIREBASE_PROJECT_ID=your_project_id
-   FIREBASE_CLIENT_EMAIL=your_service_account_email
-   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-
-   # AWS S3 (server only)
-   AWS_REGION=your_bucket_region
-   AWS_BUCKET_NAME=your_bucket_name
-   AWS_ACCESS_KEY_ID=your_access_key_id
-   AWS_SECRET_ACCESS_KEY=your_secret_access_key
+   ```bash
+   cp .env.example .env.local
    ```
 
-   Keep `.env.local` private; it is ignored by Git. The Admin and AWS variables must never use the `NEXT_PUBLIC_` prefix. The private key may use literal `\n` separators as shown; the server converts them to newlines.
+   Keep `.env.local` private; it is ignored by Git. Only `NEXT_PUBLIC_*` variables are sent to the browser. The Firebase Admin private key and AWS credentials belong on the server. For `FIREBASE_PRIVATE_KEY`, use literal `\n` separators inside the quoted value; the server converts them to newlines.
 
 3. Configure the S3 bucket. The application needs permission to read, write, copy, delete, and list its image objects. Scope object permissions to the bucket's `temp/`, `uploads/`, and `deleted/uploads/` prefixes; `s3:ListBucket` applies to the bucket ARN, while object actions apply to object ARNs. Allow browser uploads from `http://localhost:3000` in the bucket CORS configuration. Configure an S3 lifecycle rule to expire `temp/` uploads after one day so abandoned temporary uploads are collected.
 
