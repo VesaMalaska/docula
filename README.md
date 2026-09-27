@@ -104,3 +104,9 @@ Set the same environment variables in your application host and deploy the app a
 - `lib/server/`: Firebase Admin initialization and server authorization
 - `lib/__tests__/`: unit tests and Firestore Rules emulator tests
 - `firestore.rules` and `firestore.indexes.json`: Firestore access and indexes
+
+## License
+
+Docula is licensed under the [MIT License](LICENSE). Copyright (c) 2026 Vesa Malaska.
+
+If you fork Docula, a link back to the [original project](https://github.com/VesaMalaska/docula) is appreciated. The MIT license requires retaining its copyright and permission notice in redistributed copies; it does not require a link or an in-app credit.
