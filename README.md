@@ -8,7 +8,7 @@ Docula is a collaborative documentation app for organizing and writing team know
 
 - Create private or public Spaces, invite members, and organize documents up to four levels deep.
 - Edit together with document locks and revision checks that reject conflicting saves.
-- Link documents and follow backlinks; search and navigate from the sidebar.
+- Link documents, follow backlinks, and navigate the document tree from the sidebar.
 - Import Markdown into a Space and export documents as Markdown or Word (`.docx`).
 - Upload images through scoped S3 URLs, with client-side resizing and WebP conversion where supported.
 - Move documents, send documents or Spaces to Trash, restore them, or permanently delete them.
