@@ -1,6 +1,6 @@
 "use server";
 
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Transaction, type Firestore } from "firebase-admin/firestore";
 import { getAdminFirestore } from "../server/firebase-admin";
 import {
     verifyIdToken,
@@ -112,6 +112,42 @@ function canAffectTargetBacklink(targetSnap: any, docSpaceId: string): boolean {
     return true;
 }
 
+async function verifyAncestorsActive(
+    transaction: Transaction,
+    db: Firestore,
+    path: unknown,
+    parentId: unknown,
+    docSpaceId: string
+): Promise<void> {
+    const rawPath = Array.isArray(path) ? path : [];
+    const ancestorIds = [...rawPath];
+    if (typeof parentId === "string" && parentId && !ancestorIds.includes(parentId)) {
+        ancestorIds.push(parentId);
+    }
+
+    for (const ancestorId of ancestorIds) {
+        if (!ancestorId || typeof ancestorId !== "string") continue;
+        const ancestorRef = db.collection("documents").doc(ancestorId);
+        const ancestorSnap = await transaction.get(ancestorRef);
+        if (!ancestorSnap.exists) {
+            throw new Error(`Cannot save document: ancestor "${ancestorId}" not found.`);
+        }
+        const ancestorData = typeof ancestorSnap.data === "function" ? ancestorSnap.data() : ancestorSnap.data;
+        if (!ancestorData) {
+            throw new Error(`Cannot save document: ancestor "${ancestorId}" data missing.`);
+        }
+        if (ancestorData.spaceId !== docSpaceId) {
+            throw new Error(`Cannot save document: ancestor "${ancestorId}" belongs to a different space.`);
+        }
+        if (ancestorData.deleted === true || ancestorData.deletedAt != null) {
+            throw new Error(`Cannot save document: ancestor "${ancestorId}" is deleted.`);
+        }
+        if (ancestorData.permanentDeletionClaim || ancestorData.lifecycleClaim) {
+            throw new Error(`Cannot save document: ancestor "${ancestorId}" is currently locked for a lifecycle operation.`);
+        }
+    }
+}
+
 export async function updateDocumentAction(
     idToken: string | undefined,
     id: string,
@@ -205,6 +241,9 @@ export async function updateDocumentAction(
             if (!isOwner && !isMember) {
                 throw new Error("Permission denied: not a space contributor.");
             }
+
+            // Verify all ancestors named by trusted path are active and unclaimed
+            await verifyAncestorsActive(transaction, db, currentDoc.path, currentDoc.parentId, docSpaceId);
 
             const currentRevision = typeof currentDoc.revision === "number" ? currentDoc.revision : 0;
 
@@ -388,6 +427,9 @@ export async function updateDocumentAction(
             if (!isOwner && !isMember) {
                 throw new Error("Permission denied: not a space contributor.");
             }
+
+            // Verify all ancestors named by trusted path are active and unclaimed
+            await verifyAncestorsActive(transaction, db, currentDoc.path, currentDoc.parentId, docSpaceId);
 
             const currentRevision = typeof currentDoc.revision === "number" ? currentDoc.revision : 0;
             let shouldBumpRevision = false;

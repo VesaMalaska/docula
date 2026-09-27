@@ -615,4 +615,232 @@ describe("updateDocumentAction Security & Untrusted Input Audit", () => {
             assert.strictEqual(docSnap?.revision, 2);
         });
     });
+
+    describe("Ancestor Claim & Lifecycle Protection in updateDocumentAction", () => {
+        const parentDocId = "doc-parent";
+        const parentDocPath = `documents/${parentDocId}`;
+        const childDocId = "doc-child";
+        const childDocPath = `documents/${childDocId}`;
+        const childContentPath = `documents/${childDocId}/content/main`;
+
+        beforeEach(() => {
+            // Seed parent document (active)
+            firestoreStore.set(parentDocPath, {
+                id: parentDocId,
+                spaceId,
+                title: "Parent Document",
+                parentId: null,
+                path: [],
+                tags: [],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                revision: 1,
+                deleted: false,
+            });
+
+            // Seed child document under parent
+            firestoreStore.set(childDocPath, {
+                id: childDocId,
+                spaceId,
+                title: "Child Original Title",
+                parentId: parentDocId,
+                path: [parentDocId],
+                tags: ["child-initial"],
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                revision: 1,
+                outboundLinks: [],
+                backlinks: [],
+                deleted: false,
+            });
+
+            // Seed child content
+            firestoreStore.set(childContentPath, {
+                content: createTipTapDoc([]),
+            });
+        });
+
+        it("claims parent: child content save and metadata save are both rejected and neither writes to Firestore", async () => {
+            // 1. Parent is claimed by soft-delete lifecycle operation
+            const parentDoc = firestoreStore.get(parentDocPath)!;
+            firestoreStore.set(parentDocPath, {
+                ...parentDoc,
+                lifecycleClaim: {
+                    claimedAt: new Date(),
+                    claimedBy: "user-contributor",
+                    operation: "soft-delete",
+                    opId: "soft-del-op-1",
+                },
+            });
+
+            // 2. Attempt child content save
+            const attemptedChildContent = {
+                type: "doc",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Maliciously written child content" }] }],
+            };
+
+            await assert.rejects(
+                updateDocumentAction("valid-token", childDocId, {
+                    title: "Child Attacked Title",
+                    content: attemptedChildContent,
+                    baseRevision: 1,
+                }),
+                {
+                    name: "Error",
+                    message: `Cannot save document: ancestor "${parentDocId}" is currently locked for a lifecycle operation.`,
+                }
+            );
+
+            // Confirm child doc and content were NOT written by content save
+            const childDocAfterContentSave = firestoreStore.get(childDocPath);
+            assert.strictEqual(childDocAfterContentSave?.title, "Child Original Title");
+            assert.strictEqual(childDocAfterContentSave?.revision, 1);
+            assert.deepStrictEqual(childDocAfterContentSave?.tags, ["child-initial"]);
+
+            const childContentAfterContentSave = firestoreStore.get(childContentPath);
+            assert.deepStrictEqual(childContentAfterContentSave?.content, createTipTapDoc([]));
+
+            // 3. Attempt child metadata save
+            await assert.rejects(
+                updateDocumentAction("valid-token", childDocId, {
+                    title: "Child Attacked Metadata Title",
+                    tags: ["attack-tag"],
+                    baseRevision: 1,
+                }),
+                {
+                    name: "Error",
+                    message: `Cannot save document: ancestor "${parentDocId}" is currently locked for a lifecycle operation.`,
+                }
+            );
+
+            // Confirm child doc was NOT written by metadata save
+            const childDocAfterMetaSave = firestoreStore.get(childDocPath);
+            assert.strictEqual(childDocAfterMetaSave?.title, "Child Original Title");
+            assert.strictEqual(childDocAfterMetaSave?.revision, 1);
+            assert.deepStrictEqual(childDocAfterMetaSave?.tags, ["child-initial"]);
+        });
+
+        it("parent has permanentDeletionClaim: child save is rejected and does not write", async () => {
+            const parentDoc = firestoreStore.get(parentDocPath)!;
+            firestoreStore.set(parentDocPath, {
+                ...parentDoc,
+                permanentDeletionClaim: {
+                    claimedAt: new Date(),
+                    claimedBy: "admin",
+                },
+            });
+
+            await assert.rejects(
+                updateDocumentAction("valid-token", childDocId, {
+                    title: "Child Save Under Perm Deletion",
+                    content: createTipTapDoc([]),
+                    baseRevision: 1,
+                }),
+                {
+                    name: "Error",
+                    message: `Cannot save document: ancestor "${parentDocId}" is currently locked for a lifecycle operation.`,
+                }
+            );
+
+            const childDocSnap = firestoreStore.get(childDocPath);
+            assert.strictEqual(childDocSnap?.title, "Child Original Title");
+            assert.strictEqual(childDocSnap?.revision, 1);
+        });
+
+        it("parent is deleted: child save is rejected and does not write", async () => {
+            const parentDoc = firestoreStore.get(parentDocPath)!;
+            firestoreStore.set(parentDocPath, {
+                ...parentDoc,
+                deleted: true,
+                deletedAt: new Date(),
+            });
+
+            await assert.rejects(
+                updateDocumentAction("valid-token", childDocId, {
+                    title: "Child Save Under Deleted Parent",
+                    content: createTipTapDoc([]),
+                    baseRevision: 1,
+                }),
+                {
+                    name: "Error",
+                    message: `Cannot save document: ancestor "${parentDocId}" is deleted.`,
+                }
+            );
+
+            const childDocSnap = firestoreStore.get(childDocPath);
+            assert.strictEqual(childDocSnap?.title, "Child Original Title");
+            assert.strictEqual(childDocSnap?.revision, 1);
+        });
+
+        it("parent in another space: child save is rejected and does not write", async () => {
+            const parentDoc = firestoreStore.get(parentDocPath)!;
+            firestoreStore.set(parentDocPath, {
+                ...parentDoc,
+                spaceId: "foreign-space-id",
+            });
+
+            await assert.rejects(
+                updateDocumentAction("valid-token", childDocId, {
+                    title: "Child Save Under Foreign Space Parent",
+                    content: createTipTapDoc([]),
+                    baseRevision: 1,
+                }),
+                {
+                    name: "Error",
+                    message: `Cannot save document: ancestor "${parentDocId}" belongs to a different space.`,
+                }
+            );
+        });
+
+        it("parent missing from database: child save is rejected and does not write", async () => {
+            firestoreStore.delete(parentDocPath);
+
+            await assert.rejects(
+                updateDocumentAction("valid-token", childDocId, {
+                    title: "Child Save Under Non-existent Parent",
+                    content: createTipTapDoc([]),
+                    baseRevision: 1,
+                }),
+                {
+                    name: "Error",
+                    message: `Cannot save document: ancestor "${parentDocId}" not found.`,
+                }
+            );
+        });
+
+        it("positive child save: child content save and metadata save succeed when parent is active", async () => {
+            // 1. Content save succeeds
+            const updatedContent = {
+                type: "doc",
+                content: [{ type: "paragraph", content: [{ type: "text", text: "Legitimate child content" }] }],
+            };
+
+            const contentResult = await updateDocumentAction("valid-token", childDocId, {
+                title: "Child Legitimate Content Title",
+                content: updatedContent,
+                baseRevision: 1,
+            });
+
+            assert.strictEqual(contentResult.contentSaved, true);
+            const childDocAfterContent = firestoreStore.get(childDocPath);
+            assert.strictEqual(childDocAfterContent?.title, "Child Legitimate Content Title");
+            assert.strictEqual(childDocAfterContent?.revision, 2);
+
+            const childContentSnap = firestoreStore.get(childContentPath);
+            assert.deepStrictEqual(childContentSnap?.content, updatedContent);
+
+            // 2. Metadata save succeeds
+            const metaResult = await updateDocumentAction("valid-token", childDocId, {
+                title: "Child Legitimate Meta Title",
+                tags: ["tag-child-updated"],
+                baseRevision: 2,
+            });
+
+            assert.strictEqual(metaResult.contentSaved, true);
+            const childDocAfterMeta = firestoreStore.get(childDocPath);
+            assert.strictEqual(childDocAfterMeta?.title, "Child Legitimate Meta Title");
+            assert.strictEqual(childDocAfterMeta?.revision, 3);
+            assert.deepStrictEqual(childDocAfterMeta?.tags, ["tag-child-updated"]);
+        });
+    });
 });
