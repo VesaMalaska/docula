@@ -98,23 +98,21 @@ export async function purgeSpaceStepAction(
             const imageUrls = await getDocumentContentUrls(docId);
 
             // b. Complete required S3 cleanup before deleting content and metadata
-            if (imageUrls && imageUrls.length > 0) {
+            try {
+                await permanentDeleteImages(idToken, spaceId, docId, imageUrls || []);
+            } catch (err) {
+                // If another worker deleted the document concurrently, skip gracefully
                 try {
-                    await permanentDeleteImages(idToken, spaceId, docId, imageUrls);
-                } catch (err) {
-                    // If another worker deleted the document concurrently, skip gracefully
-                    try {
-                        const recheckDoc = await docRef.get();
-                        if (!recheckDoc.exists) {
-                            continue;
-                        }
-                    } catch {
-                        // Ignore recheck errors and proceed to handle S3 cleanup failure
+                    const recheckDoc = await docRef.get();
+                    if (!recheckDoc.exists) {
+                        continue;
                     }
-                    console.error(`S3 cleanup failed for document ${docId} during space purge:`, err);
-                    // If cleanup fails, retain the Firestore records needed for retry and show a useful generic error.
-                    throw new Error("Failed to delete space images during permanent purge. Please try again.");
+                } catch {
+                    // Ignore recheck errors and proceed to handle S3 cleanup failure
                 }
+                console.error(`S3 cleanup failed for document ${docId} during space purge:`, err);
+                // If cleanup fails, retain the Firestore records needed for retry and show a useful generic error.
+                throw new Error("Failed to delete space images during permanent purge. Please try again.");
             }
 
             // c. Atomically delete content record and document metadata

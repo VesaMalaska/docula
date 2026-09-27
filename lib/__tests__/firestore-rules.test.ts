@@ -664,8 +664,8 @@ if (!isEmulatorRunning) {
           })
         );
 
-        // Member writes content
-        await assertSucceeds(
+        // Member direct write to content subcollection on existing document is denied
+        await assertFails(
           setDoc(doc(bob, `documents/${newDocId}/content`, "main"), {
             content: "Bob content",
             updatedAt: serverTimestamp(),
@@ -1948,24 +1948,21 @@ if (!isEmulatorRunning) {
         const bob = testEnv.authenticatedContext("bob").firestore();
         const alice = testEnv.authenticatedContext("alice").firestore();
 
-        // 1. Bob creates a document and writes content
-        await assertSucceeds(
-          setDoc(doc(bob, "documents", bobDocId), {
-            title: "Bob's Work",
-            spaceId: spaceId,
-            parentId: null,
-            path: [],
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
-        );
-
-        await assertSucceeds(
-          setDoc(doc(bob, `documents/${bobDocId}/content`, "main"), {
-            content: "Essential research notes written by Bob",
-            updatedAt: serverTimestamp(),
-          })
-        );
+        // 1. Bob creates a document and writes content via atomic batch
+        const createBatch = writeBatch(bob);
+        createBatch.set(doc(bob, "documents", bobDocId), {
+          title: "Bob's Work",
+          spaceId: spaceId,
+          parentId: null,
+          path: [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        createBatch.set(doc(bob, `documents/${bobDocId}/content`, "main"), {
+          content: "Essential research notes written by Bob",
+          updatedAt: serverTimestamp(),
+        });
+        await assertSucceeds(createBatch.commit());
 
         // 2. Alice removes Bob from the space
         await assertSucceeds(
@@ -3539,8 +3536,8 @@ if (!isEmulatorRunning) {
             updatedAt: serverTimestamp(),
           })
         );
-        // Legitimate content update on rootDocId
-        await assertSucceeds(
+        // Direct client content update on existing rootDocId is denied (server-authoritative save required)
+        await assertFails(
           setDoc(doc(bob, `documents/${rootDocId}/content`, "main"), {
             content: "Legitimate updated content",
             updatedAt: serverTimestamp(),
@@ -5186,6 +5183,291 @@ if (!isEmulatorRunning) {
           assert.equal(l2Snap.data()?.parentId, bId);
           assert.deepEqual(l2Snap.data()?.path, [rootId, bId]);
         });
+      });
+    });
+
+    describe("Direct-Client Bypass Prevention of Image Cleanup State & Save Boundary", () => {
+      const spaceTestId = "space-image-lifecycle-test";
+      const docTestId = "doc-image-lifecycle-test";
+
+      beforeEach(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+          // Seed active space
+          await setDoc(doc(db, "spaces", spaceTestId), {
+            name: "Image Lifecycle Test Space",
+            isPublic: false,
+            ownerId: "alice",
+            userIds: ["alice", "bob"],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            deletedAt: null,
+            deletedBy: null,
+            purgeState: null,
+          });
+
+          // Seed active document
+          await setDoc(doc(db, "documents", docTestId), {
+            spaceId: spaceTestId,
+            title: "Original Document",
+            parentId: null,
+            path: [],
+            revision: 1,
+            pendingImageCleanup: ["uploads/space-image-lifecycle-test/doc-image-lifecycle-test/old-img.png"],
+            retiredImageKeys: ["space-image-lifecycle-test/doc-image-lifecycle-test/retired-img.png"],
+            imageCleanupClaim: {
+              claimId: "claim-worker-active",
+              keys: ["uploads/space-image-lifecycle-test/doc-image-lifecycle-test/old-img.png"],
+              claimedAt: serverTimestamp(),
+            },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            deleted: false,
+          });
+
+          // Seed content subcollection
+          await setDoc(doc(db, `documents/${docTestId}/content`, "main"), {
+            content: {
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Original document content" }],
+                },
+              ],
+            },
+            updatedAt: serverTimestamp(),
+          });
+        });
+      });
+
+      test("negative: direct client contributor cannot clear or overwrite imageCleanupClaim via updateDoc", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const docRef = doc(bob, "documents", docTestId);
+
+        // Attempt to clear claim with null
+        await assertFails(updateDoc(docRef, { imageCleanupClaim: null }));
+
+        // Attempt to clear claim with deleteField()
+        await assertFails(updateDoc(docRef, { imageCleanupClaim: deleteField() }));
+
+        // Attempt to forge or alter claim with new claimId
+        await assertFails(
+          updateDoc(docRef, {
+            imageCleanupClaim: {
+              claimId: "forged-claim-id",
+              keys: [],
+            },
+          })
+        );
+      });
+
+      test("negative: direct client contributor cannot clear or alter pendingImageCleanup via updateDoc", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const docRef = doc(bob, "documents", docTestId);
+
+        // Attempt to clear pending cleanup with empty array
+        await assertFails(updateDoc(docRef, { pendingImageCleanup: [] }));
+
+        // Attempt to delete pending cleanup field
+        await assertFails(updateDoc(docRef, { pendingImageCleanup: deleteField() }));
+
+        // Attempt to overwrite pending cleanup keys
+        await assertFails(updateDoc(docRef, { pendingImageCleanup: ["forged-key.png"] }));
+      });
+
+      test("negative: direct client contributor cannot clear or alter retiredImageKeys via updateDoc", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const docRef = doc(bob, "documents", docTestId);
+
+        // Attempt to clear retired keys with empty array
+        await assertFails(updateDoc(docRef, { retiredImageKeys: [] }));
+
+        // Attempt to delete retired keys field
+        await assertFails(updateDoc(docRef, { retiredImageKeys: deleteField() }));
+
+        // Attempt to overwrite retired keys
+        await assertFails(updateDoc(docRef, { retiredImageKeys: ["forged-key.png"] }));
+      });
+
+      test("negative: direct client contributor cannot modify or forge document revision via updateDoc", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const docRef = doc(bob, "documents", docTestId);
+
+        // Attempt to increment revision directly
+        await assertFails(updateDoc(docRef, { revision: 2 }));
+
+        // Attempt to set arbitrary high revision
+        await assertFails(updateDoc(docRef, { revision: 999 }));
+
+        // Attempt to delete revision field
+        await assertFails(updateDoc(docRef, { revision: deleteField() }));
+      });
+
+      test("negative: direct client contributor cannot forge cleanup state or invalid revision on document create", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        // Attempt create with imageCleanupClaim
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-create-with-claim"), {
+            spaceId: spaceTestId,
+            title: "Doc with claim",
+            parentId: null,
+            path: [],
+            imageCleanupClaim: { claimId: "fake", keys: [] },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Attempt create with pendingImageCleanup
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-create-with-pending"), {
+            spaceId: spaceTestId,
+            title: "Doc with pending",
+            parentId: null,
+            path: [],
+            pendingImageCleanup: ["fake-key"],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Attempt create with retiredImageKeys
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-create-with-retired"), {
+            spaceId: spaceTestId,
+            title: "Doc with retired",
+            parentId: null,
+            path: [],
+            retiredImageKeys: ["fake-key"],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Attempt create with revision != 1
+        await assertFails(
+          setDoc(doc(bob, "documents", "doc-create-with-rev2"), {
+            spaceId: spaceTestId,
+            title: "Doc with rev 2",
+            parentId: null,
+            path: [],
+            revision: 2,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("negative: direct client contributor cannot write or update content on existing documents directly", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const contentRef = doc(bob, `documents/${docTestId}/content`, "main");
+
+        // Attempt direct updateDoc on content
+        await assertFails(
+          updateDoc(contentRef, {
+            content: { type: "doc", content: [] },
+            updatedAt: serverTimestamp(),
+          })
+        );
+
+        // Attempt direct setDoc on content (e.g. attempting to re-introduce retired image or bypass OCC)
+        await assertFails(
+          setDoc(contentRef, {
+            content: {
+              type: "doc",
+              content: [
+                {
+                  type: "image",
+                  attrs: {
+                    src: `https://test-bucket.s3.amazonaws.com/uploads/${spaceTestId}/${docTestId}/retired-img.png`,
+                  },
+                },
+              ],
+            },
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("positive: direct client contributor CAN update non-protected document metadata", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const docRef = doc(bob, "documents", docTestId);
+
+        // Update title and tags (not in isProtectedDocKeyModified)
+        await assertSucceeds(
+          updateDoc(docRef, {
+            title: "Updated Legitimate Title",
+            tags: ["architecture", "v0.7.0"],
+            updatedAt: serverTimestamp(),
+          })
+        );
+      });
+
+      test("positive: atomic batch write creating document and initial content simultaneously succeeds", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const newBatchDocId = "doc-batch-create-valid";
+        const docRef = doc(bob, "documents", newBatchDocId);
+        const contentRef = doc(bob, `documents/${newBatchDocId}/content`, "main");
+
+        const batch = writeBatch(bob);
+        batch.set(docRef, {
+          spaceId: spaceTestId,
+          title: "Batch Created Document",
+          parentId: null,
+          path: [],
+          revision: 1,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        batch.set(contentRef, {
+          content: { type: "doc", content: [{ type: "paragraph", text: "Hello world" }] },
+          updatedAt: serverTimestamp(),
+        });
+
+        await assertSucceeds(batch.commit());
+      });
+
+      test("positive: soft-deleted space owner cleanup of document and content still succeeds", async () => {
+        const cleanupSpaceId = "space-cleanup-owner-test";
+        const cleanupDocId = "doc-cleanup-owner-test";
+
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          const db = context.firestore();
+          await setDoc(doc(db, "spaces", cleanupSpaceId), {
+            name: "Soft Deleted Space",
+            isPublic: false,
+            ownerId: "alice",
+            userIds: ["alice"],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            deletedAt: serverTimestamp(),
+            deletedBy: "alice",
+          });
+          await setDoc(doc(db, "documents", cleanupDocId), {
+            spaceId: cleanupSpaceId,
+            title: "Doc to Cleanup",
+            parentId: null,
+            path: [],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${cleanupDocId}/content`, "main"), {
+            content: { type: "doc" },
+            updatedAt: serverTimestamp(),
+          });
+        });
+
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const docRef = doc(alice, "documents", cleanupDocId);
+        const contentRef = doc(alice, `documents/${cleanupDocId}/content`, "main");
+
+        // Space owner can delete content subcollection record during cleanup
+        await assertSucceeds(deleteDoc(contentRef));
+
+        // Space owner can delete document record during cleanup
+        await assertSucceeds(deleteDoc(docRef));
       });
     });
   });

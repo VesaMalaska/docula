@@ -5,17 +5,18 @@ import {
   getDoc, 
   getDocs, 
   updateDoc,
-  runTransaction,
   serverTimestamp, 
   query,
   orderBy,
   where,
   writeBatch,
   DocumentSnapshot,
-  FirestoreError
+  FirestoreError,
+  type Timestamp
 } from "firebase/firestore";
 import type { Document, SidebarNode, RestoreDestination } from "@/lib/types";
 import { getPresignedGetUrl } from "./s3";
+import { updateDocumentAction } from "./document-save";
 import { permanentlyDeleteDocumentAction } from "./document-permanent-delete";
 import {
   softDeleteDocumentAction,
@@ -96,6 +97,7 @@ export async function createDocument(
     tags: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    revision: 1,
     lock: null,
     outboundLinks,
     backlinks: [],
@@ -221,88 +223,34 @@ function extractLinks(content: any): string[] {
   return Array.from(links);
 }
 
-export async function updateDocument(id: string, data: Partial<Document>) {
-  const docRef = doc(db, "documents", id);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-  const { id: _, content: contentField, ...updateData } = data as any;
-  updateData.updatedAt = serverTimestamp();
+export interface UpdateDocumentData {
+  id?: string;
+  title?: string;
+  tags?: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content?: any;
+  baseRevision?: number | null;
+  baseUpdatedAt?: Timestamp | Date | number | null;
+}
 
-  if (contentField !== undefined) {
-      const newOutboundLinks = extractLinks(contentField);
-      const contentRef = doc(db, "documents", id, "content", "main");
-      
-      await runTransaction(db, async (transaction) => {
-          // Phase 1: READ ALL
-          const docSnap = await transaction.get(docRef);
-          if (!docSnap.exists()) throw new Error("Doc not found");
-          
-          const currentDoc = docSnap.data();
-          const oldOutboundLinks = currentDoc.outboundLinks || [];
-          
-          const added = newOutboundLinks.filter(l => !oldOutboundLinks.includes(l));
-          const removed = oldOutboundLinks.filter((l: string) => !newOutboundLinks.includes(l));
-          
-          // Pre-fetch all targets to ensure we read everything before any write
-          const allTargetIds = [...new Set([...added, ...removed])];
-          const targetSnaps: Record<string, DocumentSnapshot> = {};
-          
-          for (const targetId of allTargetIds) {
-             const targetRef = doc(db, "documents", targetId);
-             // Note: if targetId is same as id, we already read it in docSnap?
-             // Not necessarily for the purpose of this map, but firestore handles redundant reads if they are same ref efficiently usually.
-             // However, to be safe and avoid read-start-after-write if logic gets complex:
-             if (targetId === id) {
-                 targetSnaps[targetId] = docSnap;
-             } else {
-                 targetSnaps[targetId] = await transaction.get(targetRef);
-             }
-          }
+export interface UpdateDocumentOptions {
+  baseRevision?: number | null;
+  baseUpdatedAt?: Timestamp | Date | number | null;
+}
 
-          // Phase 2: WRITE ALL
-          
-          // Update main doc
-          transaction.update(docRef, {
-              ...updateData,
-              outboundLinks: newOutboundLinks
-          });
+export interface UpdateDocumentResult {
+  contentSaved: boolean;
+  cleanupPending: boolean;
+  cleanupError?: string | null;
+}
 
-          // Write to subcollection
-          transaction.set(contentRef, { content: contentField });
-          
-          // Update added backlinks
-          for (const targetId of added) {
-              const targetRef = doc(db, "documents", targetId);
-              const targetSnap = targetSnaps[targetId];
-              
-              if (targetSnap.exists()) {
-                  const targetData = targetSnap.data();
-                  const backlinks = targetData.backlinks || [];
-                  if (!backlinks.includes(id)) {
-                      transaction.update(targetRef, {
-                          backlinks: [...backlinks, id]
-                      });
-                  }
-              }
-          }
-          
-          // Update removed backlinks
-          for (const targetId of removed) {
-              const targetRef = doc(db, "documents", targetId);
-              const targetSnap = targetSnaps[targetId]; // Use pre-fetched snapshot
-              
-              if (targetSnap.exists()) {
-                   const targetData = targetSnap.data();
-                   const backlinks = targetData.backlinks || [];
-                   const newBacklinks = backlinks.filter((bid: string) => bid !== id);
-                   transaction.update(targetRef, {
-                       backlinks: newBacklinks
-                   });
-              }
-          }
-      });
-  } else {
-      await updateDoc(docRef, updateData);
-  }
+export async function updateDocument(
+  id: string,
+  data: UpdateDocumentData,
+  options?: UpdateDocumentOptions
+): Promise<UpdateDocumentResult> {
+  const idToken = await auth.currentUser?.getIdToken();
+  return updateDocumentAction(idToken, id, data, options);
 }
 
 export interface DeleteDocumentOptions {

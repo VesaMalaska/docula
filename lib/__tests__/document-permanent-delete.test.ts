@@ -48,6 +48,7 @@ mock.module("../server/document-authorization", {
         authorizeSpaceContributor: authorizeSpaceContributorMock,
         getAndVerifyDocument: getAndVerifyDocumentMock,
         getDocumentContentUrls: getDocumentContentUrlsMock,
+        isModernDocumentScopedKey: mock.fn(),
     },
 });
 
@@ -56,6 +57,7 @@ const permanentDeleteImagesMock = mock.fn();
 const restoreImagesMock = mock.fn();
 const softDeleteImagesMock = mock.fn();
 const getPresignedGetUrlMock = mock.fn();
+const cleanupRemovedDocumentImagesMock = mock.fn();
 
 mock.module("../actions/s3", {
     exports: {
@@ -63,6 +65,7 @@ mock.module("../actions/s3", {
         restoreImages: restoreImagesMock,
         softDeleteImages: softDeleteImagesMock,
         getPresignedGetUrl: getPresignedGetUrlMock,
+        cleanupRemovedDocumentImages: cleanupRemovedDocumentImagesMock,
     },
 });
 
@@ -101,6 +104,7 @@ mock.module("firebase/firestore", {
         writeBatch: mock.fn(),
         DocumentSnapshot: class {},
         FirestoreError: class {},
+        deleteField: mock.fn(() => ({ _type: "delete" })),
     },
 });
 
@@ -588,7 +592,12 @@ describe("S3 ownership", () => {
 
         await permanentlyDeleteDocumentAction("valid", "s1", "d1");
 
-        assert.strictEqual(permanentDeleteImagesMock.mock.callCount(), 0);
+        assert.strictEqual(permanentDeleteImagesMock.mock.callCount(), 1);
+        const [tokenArg, spaceArg, docArg, urlsArg] = permanentDeleteImagesMock.mock.calls[0].arguments;
+        assert.strictEqual(tokenArg, "valid");
+        assert.strictEqual(spaceArg, "s1");
+        assert.strictEqual(docArg, "d1");
+        assert.deepEqual(urlsArg, []);
     });
 });
 

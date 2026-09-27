@@ -48,6 +48,7 @@ mock.module("../server/document-authorization", {
         authorizeSpaceContributor: authorizeSpaceContributorMock,
         getAndVerifyDocument: getAndVerifyDocumentMock,
         getDocumentContentUrls: getDocumentContentUrlsMock,
+        isModernDocumentScopedKey: mock.fn(),
     },
 });
 
@@ -56,6 +57,7 @@ const permanentDeleteImagesMock = mock.fn();
 const restoreImagesMock = mock.fn();
 const softDeleteImagesMock = mock.fn();
 const getPresignedGetUrlMock = mock.fn();
+const cleanupRemovedDocumentImagesMock = mock.fn();
 
 mock.module("../actions/s3", {
     exports: {
@@ -63,6 +65,7 @@ mock.module("../actions/s3", {
         restoreImages: restoreImagesMock,
         softDeleteImages: softDeleteImagesMock,
         getPresignedGetUrl: getPresignedGetUrlMock,
+        cleanupRemovedDocumentImages: cleanupRemovedDocumentImagesMock,
     },
 });
 

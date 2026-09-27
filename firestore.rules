@@ -263,6 +263,10 @@ service cloud.firestore {
           'path',
           'permanentDeletionClaim',
           'lifecycleClaim',
+          'imageCleanupClaim',
+          'pendingImageCleanup',
+          'retiredImageKeys',
+          'revision',
           'deleted',
           'deletedAt',
           'deletedBy',
@@ -278,6 +282,10 @@ service cloud.firestore {
         request.resource.data.spaceId is string &&
         canContributeToSpace(request.resource.data.spaceId) &&
         !isDocumentClaimed(request.resource.data) &&
+        !('imageCleanupClaim' in request.resource.data) &&
+        !('pendingImageCleanup' in request.resource.data) &&
+        !('retiredImageKeys' in request.resource.data) &&
+        (!('revision' in request.resource.data) || request.resource.data.revision == 1) &&
         (!('deleted' in request.resource.data) || request.resource.data.deleted == false) &&
         (!('deletionGroupId' in request.resource.data) || request.resource.data.deletionGroupId == null) &&
         (!('deletionGroupRootId' in request.resource.data) || request.resource.data.deletionGroupRootId == null) &&
@@ -307,20 +315,15 @@ service cloud.firestore {
         !isProtectedDocKeyModified(request.resource.data.diff(resource.data));
 
       match /content/{contentId} {
-         allow read: if isAuthenticated() && (
-           canReadSpace(getDocumentSpaceId(documentId)) ||
-           canCleanupDocument(getDocumentSpaceId(documentId))
-         );
-         allow create, update: if isAuthenticated() &&
-           canContributeToSpace(getDocumentSpaceId(documentId)) &&
-           !isDocumentClaimedById(documentId) &&
-           (
-             !documentExists(documentId) ||
-             !hasClaimedAncestorFromData(getDocumentData(documentId))
-           );
-         // Disallow direct client permanent deletion in active spaces.
-         // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
-         allow delete: if isAuthenticated() && canCleanupDocument(getDocumentSpaceId(documentId));
+        allow read: if isAuthenticated() && (
+          canReadSpace(getDocumentSpaceId(documentId)) ||
+          canCleanupDocument(getDocumentSpaceId(documentId))
+        );
+        allow create: if isAuthenticated() && canContributeToSpace(getDocumentSpaceId(documentId)) && !isDocumentClaimedById(documentId) && !documentExists(documentId);
+        allow update: if false;
+        // Disallow direct client permanent deletion in active spaces.
+        // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
+        allow delete: if isAuthenticated() && canCleanupDocument(getDocumentSpaceId(documentId));
       }
     }
 

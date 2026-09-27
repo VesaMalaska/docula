@@ -48,6 +48,7 @@ mock.module("../server/document-authorization", {
         authorizeSpaceContributor: mock.fn(),
         authorizeDocumentCleanup: mock.fn(),
         getAndVerifyDocument: mock.fn(),
+        isModernDocumentScopedKey: mock.fn(),
     },
 });
 
@@ -63,6 +64,7 @@ mock.module("../actions/s3", {
         restoreImages: mock.fn(),
         getPresignedGetUrl: mock.fn(),
         getPresignedUrl: mock.fn(),
+        cleanupRemovedDocumentImages: mock.fn(),
     },
 });
 

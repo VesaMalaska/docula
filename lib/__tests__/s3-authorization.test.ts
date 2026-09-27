@@ -53,6 +53,14 @@ mock.module("@aws-sdk/client-s3", {
             params: Record<string, unknown>;
             constructor(params: Record<string, unknown>) { this.params = params; }
         },
+        HeadObjectCommand: class {
+            params: Record<string, unknown>;
+            constructor(params: Record<string, unknown>) { this.params = params; }
+        },
+        ListObjectsV2Command: class {
+            params: Record<string, unknown>;
+            constructor(params: Record<string, unknown>) { this.params = params; }
+        },
     },
 });
 
@@ -79,6 +87,8 @@ const getAndVerifyDocumentMock = mock.fn();
 const extractCanonicalKeyMock = mock.fn();
 const verifyLegacyKeyOwnershipMock = mock.fn();
 const authorizeDocumentCleanupMock = mock.fn();
+const getDocumentContentUrlsMock = mock.fn();
+const isModernDocumentScopedKeyMock = mock.fn();
 
 mock.module("../server/document-authorization", {
     exports: {
@@ -89,6 +99,8 @@ mock.module("../server/document-authorization", {
         extractCanonicalKey: extractCanonicalKeyMock,
         verifyLegacyKeyOwnership: verifyLegacyKeyOwnershipMock,
         authorizeDocumentCleanup: authorizeDocumentCleanupMock,
+        getDocumentContentUrls: getDocumentContentUrlsMock,
+        isModernDocumentScopedKey: isModernDocumentScopedKeyMock,
     },
 });
 
@@ -571,6 +583,22 @@ test.describe("softDeleteImages", () => {
         assert.strictEqual(s3SendMock.mock.callCount(), 0);
     });
 
+    test("rejects foreign space key — no AWS call", async () => {
+        await assert.rejects(
+            softDeleteImages("valid", "s1", "d1", ["uploads/foreign-space/d1/owned.png"]),
+            /key belongs to another space/
+        );
+        assert.strictEqual(s3SendMock.mock.callCount(), 0);
+    });
+
+    test("rejects foreign document key — no AWS call", async () => {
+        await assert.rejects(
+            softDeleteImages("valid", "s1", "d1", ["uploads/s1/foreign-doc/owned.png"]),
+            /key belongs to another document/
+        );
+        assert.strictEqual(s3SendMock.mock.callCount(), 0);
+    });
+
     test("copy-then-delete for owned key", async () => {
         s3SendMock.mock.mockImplementation(async () => ({}));
         await softDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/owned.png"]);
@@ -622,6 +650,22 @@ test.describe("restoreImages", () => {
         assert.strictEqual(s3SendMock.mock.callCount(), 0);
     });
 
+    test("rejects foreign space key — no AWS call", async () => {
+        await assert.rejects(
+            restoreImages("valid", "s1", "d1", ["uploads/foreign-space/d1/owned.png"]),
+            /key belongs to another space/
+        );
+        assert.strictEqual(s3SendMock.mock.callCount(), 0);
+    });
+
+    test("rejects foreign document key — no AWS call", async () => {
+        await assert.rejects(
+            restoreImages("valid", "s1", "d1", ["uploads/s1/foreign-doc/owned.png"]),
+            /key belongs to another document/
+        );
+        assert.strictEqual(s3SendMock.mock.callCount(), 0);
+    });
+
     test("copy-then-delete for owned key", async () => {
         s3SendMock.mock.mockImplementation(async () => ({}));
         await restoreImages("valid", "s1", "d1", ["uploads/s1/d1/owned.png"]);
@@ -656,7 +700,8 @@ test.describe("permanentDeleteImages", () => {
     test("active space: ordinary member can delete owned key", async () => {
         s3SendMock.mock.mockImplementation(async () => ({}));
         await permanentDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/owned.png"]);
-        assert.strictEqual(s3SendMock.mock.callCount(), 2);
+        const deleteCalls = s3SendMock.mock.calls.filter((c: { arguments: unknown[] }) => (c.arguments[0] as { constructor?: { name?: string } })?.constructor?.name === "DeleteObjectCommand");
+        assert.strictEqual(deleteCalls.length, 2);
     });
 
     test("active space: rejects ordinary member of soft-deleted space — no AWS call", async () => {
@@ -681,7 +726,8 @@ test.describe("permanentDeleteImages", () => {
         s3SendMock.mock.mockImplementation(async () => ({}));
 
         await permanentDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/owned.png"]);
-        assert.strictEqual(s3SendMock.mock.callCount(), 2);
+        const deleteCalls = s3SendMock.mock.calls.filter((c: { arguments: unknown[] }) => (c.arguments[0] as { constructor?: { name?: string } })?.constructor?.name === "DeleteObjectCommand");
+        assert.strictEqual(deleteCalls.length, 2);
         assert.strictEqual(getAndVerifyDocumentMock.mock.callCount(), 1);
     });
 
@@ -787,5 +833,233 @@ test.describe("S3 Failure Propagation and Lifecycle Blocking", () => {
 
         await assert.rejects(mockCallerRestoreDocument(), /images could not be restored/);
         assert.strictEqual(firestoreRestored, false, "Firestore document must not be restored when S3 fails");
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Retryable Copy/Delete Lifecycle States & Invariants
+// ═══════════════════════════════════════════════════════════════════════════════
+test.describe("Retryable Copy/Delete Lifecycle States & Invariants", () => {
+    test.beforeEach(() => { resetAllMocks(); setDefaultSuccessMocks(); });
+
+    test("softDeleteImages: copy succeeds, source delete fails, then retry completes successfully", async () => {
+        let attempts = 0;
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                return {};
+            }
+            if (cmdName === "DeleteObjectCommand") {
+                attempts++;
+                if (attempts === 1) {
+                    throw new Error("S3 Delete Transient Error");
+                }
+                return {};
+            }
+            return {};
+        });
+
+        // First attempt: copy succeeds, delete source fails
+        await assert.rejects(
+            softDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/img.png"]),
+            /images could not be soft-deleted/
+        );
+
+        // Retry attempt: copy succeeds (overwriting destination), delete source succeeds
+        await softDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/img.png"]);
+        assert.strictEqual(attempts, 2);
+    });
+
+    test("softDeleteImages: destination already exists on retry when source is missing", async () => {
+        // Simulate source missing on CopyObject (NoSuchKey), but destination exists on HeadObject
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                const err = new Error("The specified key does not exist.");
+                err.name = "NoSuchKey";
+                throw err;
+            }
+            if (cmdName === "HeadObjectCommand") {
+                // Destination exists!
+                return { ContentLength: 1234 };
+            }
+            if (cmdName === "DeleteObjectCommand") {
+                return {};
+            }
+            return {};
+        });
+
+        // Must succeed without throwing
+        await softDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/img.png"]);
+    });
+
+    test("softDeleteImages: fails visibly when neither source nor destination exists", async () => {
+        // Both source missing (CopyObject throws NoSuchKey) and destination missing (HeadObject throws NotFound)
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                const err = new Error("The specified key does not exist.");
+                err.name = "NoSuchKey";
+                throw err;
+            }
+            if (cmdName === "HeadObjectCommand") {
+                const err = new Error("Not Found");
+                err.name = "NotFound";
+                (err as { $metadata?: { httpStatusCode: number } }).$metadata = { httpStatusCode: 404 };
+                throw err;
+            }
+            return {};
+        });
+
+        await assert.rejects(
+            softDeleteImages("valid", "s1", "d1", ["uploads/s1/d1/img.png"]),
+            /images could not be soft-deleted/
+        );
+    });
+
+    test("restoreImages: destination already exists on retry when source is missing", async () => {
+        // Source (deleted/) is gone, destination (uploads/) exists
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                const err = new Error("NoSuchKey");
+                err.name = "NoSuchKey";
+                throw err;
+            }
+            if (cmdName === "HeadObjectCommand") {
+                return { ContentLength: 5678 };
+            }
+            if (cmdName === "DeleteObjectCommand") {
+                return {};
+            }
+            return {};
+        });
+
+        await restoreImages("valid", "s1", "d1", ["uploads/s1/d1/img.png"]);
+    });
+
+    test("restoreImages: fails visibly when neither source nor destination exists", async () => {
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                const err = new Error("NoSuchKey");
+                err.name = "NoSuchKey";
+                throw err;
+            }
+            if (cmdName === "HeadObjectCommand") {
+                const err = new Error("NotFound");
+                err.name = "NotFound";
+                return Promise.reject(err);
+            }
+            return {};
+        });
+
+        await assert.rejects(
+            restoreImages("valid", "s1", "d1", ["uploads/s1/d1/img.png"]),
+            /images could not be restored/
+        );
+    });
+
+    test("permanentizeImages: destination already exists on retry returns mapping", async () => {
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                const err = new Error("The specified key does not exist.");
+                err.name = "NoSuchKey";
+                throw err;
+            }
+            if (cmdName === "HeadObjectCommand") {
+                return { ContentLength: 999 };
+            }
+            if (cmdName === "DeleteObjectCommand") {
+                return {};
+            }
+            return {};
+        });
+
+        const url = "temp/s1/d1/user1/test.png";
+        const mapping = await permanentizeImages("valid", "s1", "d1", [url]);
+        assert.strictEqual(mapping[url], "uploads/s1/d1/test.png");
+    });
+
+    test("permanentizeImages: fails visibly when neither source nor destination exists", async () => {
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "CopyObjectCommand") {
+                const err = new Error("NoSuchKey");
+                err.name = "NoSuchKey";
+                throw err;
+            }
+            if (cmdName === "HeadObjectCommand") {
+                const err = new Error("NotFound");
+                err.name = "NotFound";
+                throw err;
+            }
+            return {};
+        });
+
+        await assert.rejects(
+            permanentizeImages("valid", "s1", "d1", ["temp/s1/d1/user1/test.png"]),
+            /images could not be saved/
+        );
+    });
+
+    test("partial failure among multiple images rejects and allows retry", async () => {
+        let attempt = 0;
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string }; params?: { Key?: string } }) => {
+            const cmdName = cmd.constructor.name;
+            const key = cmd.params?.Key;
+
+            if (cmdName === "CopyObjectCommand" && key?.includes("img2")) {
+                if (attempt === 0) {
+                    throw new Error("S3 Error on img2");
+                }
+            }
+            return {};
+        });
+
+        const urls = [
+            "uploads/s1/d1/img1.png",
+            "uploads/s1/d1/img2.png",
+            "uploads/s1/d1/img3.png",
+        ];
+
+        // Attempt 1 fails because img2 fails
+        await assert.rejects(
+            softDeleteImages("valid", "s1", "d1", urls),
+            /images could not be soft-deleted/
+        );
+
+        // Attempt 2 succeeds when img2 is fixed
+        attempt = 1;
+        await softDeleteImages("valid", "s1", "d1", urls);
+    });
+
+    test("repeat permanent deletion after partial prior success", async () => {
+        let deleteAttempts = 0;
+        s3SendMock.mock.mockImplementation(async (cmd: { constructor: { name: string }; params?: { Key?: string } }) => {
+            const cmdName = cmd.constructor.name;
+            if (cmdName === "ListObjectsV2Command") return { Contents: [] };
+            if (cmdName === "DeleteObjectCommand") {
+                const key = cmd.params?.Key;
+                deleteAttempts++;
+                if (deleteAttempts === 2 && key?.includes("img1")) {
+                    throw new Error("S3 Delete Failure");
+                }
+            }
+            return {};
+        });
+
+        const urls = ["uploads/s1/d1/img1.png"];
+
+        // Attempt 1 fails on second delete call
+        await assert.rejects(
+            permanentDeleteImages("valid", "s1", "d1", urls),
+            /images could not be permanently deleted/
+        );
+
+        // Attempt 2 succeeds
+        s3SendMock.mock.mockImplementation(async () => ({}));
+        await permanentDeleteImages("valid", "s1", "d1", urls);
     });
 });

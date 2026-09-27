@@ -292,3 +292,10 @@ export async function verifyLegacyKeyOwnership(docId: string, requestedKey: stri
     
     return false;
 }
+
+export function isModernDocumentScopedKey(spaceId: string, docId: string, urlOrKey: string): boolean {
+    const canonical = extractCanonicalKey(urlOrKey);
+    if (!canonical) return false;
+    const segments = canonical.split("/");
+    return segments.length === 3 && segments[0] === spaceId && segments[1] === docId;
+}
