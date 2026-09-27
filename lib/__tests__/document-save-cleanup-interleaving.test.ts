@@ -76,8 +76,104 @@ mock.module("@/lib/firebase", {
     },
 });
 
+mock.module("../server/document-authorization", {
+    exports: {
+        verifyIdToken: mock.fn(async (idToken: string | undefined) => {
+            if (!idToken) throw new Error("Missing ID token");
+            return { uid: "user-123" };
+        }),
+        authorizeSpaceContributor: mock.fn(async () => {}),
+        getAndVerifyDocument: mock.fn(),
+        getDocumentContentUrls: mock.fn(),
+        isModernDocumentScopedKey: mock.fn(),
+    },
+});
+
 const DELETE_FIELD_SENTINEL = { _type: "deleteField" };
 const SERVER_TIMESTAMP_SENTINEL = { _type: "serverTimestamp" };
+
+const executeTransaction = async (updateFunction: (tx: unknown) => Promise<unknown>) => {
+    const stagedWrites = new Map<string, Record<string, unknown>>();
+    const stagedSets = new Map<string, Record<string, unknown>>();
+
+    const tx = {
+        get: mock.fn(async (ref: MockDocRef) => {
+            const data = firestoreStore.get(ref.path);
+            return {
+                id: ref.id,
+                exists: data !== undefined,
+                data: () => (data ? { ...data } : undefined),
+            };
+        }),
+        update: mock.fn((ref: MockDocRef, updates: Record<string, unknown>) => {
+            stagedWrites.set(ref.path, updates);
+        }),
+        set: mock.fn((ref: MockDocRef, data: Record<string, unknown>) => {
+            stagedSets.set(ref.path, data);
+        }),
+    };
+
+    const result = await updateFunction(tx);
+
+    // Commit transaction atomically to store
+    for (const [path, updates] of stagedWrites.entries()) {
+        const current = firestoreStore.get(path) || {};
+        const next = { ...current };
+        for (const [k, v] of Object.entries(updates)) {
+            if (v === DELETE_FIELD_SENTINEL) {
+                delete next[k];
+            } else if (v === SERVER_TIMESTAMP_SENTINEL) {
+                next[k] = new Date();
+            } else {
+                next[k] = v;
+            }
+        }
+        firestoreStore.set(path, next);
+    }
+
+    for (const [path, data] of stagedSets.entries()) {
+        firestoreStore.set(path, data);
+    }
+
+    return result;
+};
+
+interface AdminMockDocRef extends MockDocRef {
+    collection: (col: string) => { doc: (id: string) => AdminMockDocRef };
+}
+
+function createAdminDocRef(path: string): AdminMockDocRef {
+    const segments = path.split("/");
+    const id = segments[segments.length - 1];
+    return {
+        path,
+        id,
+        collection: (subCol: string) => ({
+            doc: (subDocId: string) => createAdminDocRef(`${path}/${subCol}/${subDocId}`),
+        }),
+    };
+}
+
+mock.module("firebase-admin/firestore", {
+    exports: {
+        FieldValue: {
+            delete: () => DELETE_FIELD_SENTINEL,
+            serverTimestamp: () => SERVER_TIMESTAMP_SENTINEL,
+        },
+    },
+});
+
+mock.module("../server/firebase-admin", {
+    exports: {
+        getAdminFirestore: () => ({
+            collection: (colName: string) => ({
+                doc: (docId: string) => createAdminDocRef(`${colName}/${docId}`),
+            }),
+            runTransaction: executeTransaction,
+        }),
+        getAdminAuth: mock.fn(),
+    },
+});
 
 mock.module("firebase/firestore", {
     exports: {
@@ -86,49 +182,7 @@ mock.module("firebase/firestore", {
         deleteField: () => DELETE_FIELD_SENTINEL,
         serverTimestamp: () => SERVER_TIMESTAMP_SENTINEL,
         runTransaction: mock.fn(async (_db: unknown, updateFunction: (tx: unknown) => Promise<unknown>) => {
-            const stagedWrites = new Map<string, Record<string, unknown>>();
-            const stagedSets = new Map<string, Record<string, unknown>>();
-
-            const tx = {
-                get: mock.fn(async (ref: MockDocRef) => {
-                    const data = firestoreStore.get(ref.path);
-                    return {
-                        id: ref.id,
-                        exists: () => data !== undefined,
-                        data: () => (data ? { ...data } : undefined),
-                    };
-                }),
-                update: mock.fn((ref: MockDocRef, updates: Record<string, unknown>) => {
-                    stagedWrites.set(ref.path, updates);
-                }),
-                set: mock.fn((ref: MockDocRef, data: Record<string, unknown>) => {
-                    stagedSets.set(ref.path, data);
-                }),
-            };
-
-            const result = await updateFunction(tx);
-
-            // Commit transaction atomically to store
-            for (const [path, updates] of stagedWrites.entries()) {
-                const current = firestoreStore.get(path) || {};
-                const next = { ...current };
-                for (const [k, v] of Object.entries(updates)) {
-                    if (v === DELETE_FIELD_SENTINEL) {
-                        delete next[k];
-                    } else if (v === SERVER_TIMESTAMP_SENTINEL) {
-                        next[k] = new Date();
-                    } else {
-                        next[k] = v;
-                    }
-                }
-                firestoreStore.set(path, next);
-            }
-
-            for (const [path, data] of stagedSets.entries()) {
-                firestoreStore.set(path, data);
-            }
-
-            return result;
+            return executeTransaction(updateFunction);
         }),
         getDoc: mock.fn(async (ref: MockDocRef) => {
             const data = firestoreStore.get(ref.path);
@@ -165,6 +219,11 @@ describe("updateDocument & S3 Cleanup Interleaving Consistency", () => {
 
     beforeEach(() => {
         firestoreStore.clear();
+        firestoreStore.set(`spaces/${spaceId}`, {
+            id: spaceId,
+            ownerId: "user-123",
+            userIds: ["user-123"],
+        });
         cleanupRemovedDocumentImagesMock.mock.resetCalls();
         cleanupRemovedDocumentImagesMock.mock.mockImplementation(async () => {
             return { success: true, cleanedCount: 1, remainingPendingCount: 0 };

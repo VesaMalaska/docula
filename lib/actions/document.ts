@@ -5,7 +5,6 @@ import {
   getDoc, 
   getDocs, 
   updateDoc,
-  runTransaction,
   serverTimestamp, 
   query,
   orderBy,
@@ -13,11 +12,11 @@ import {
   writeBatch,
   DocumentSnapshot,
   FirestoreError,
-  deleteField,
   type Timestamp
 } from "firebase/firestore";
 import type { Document, SidebarNode, RestoreDestination } from "@/lib/types";
-import { getPresignedGetUrl, cleanupRemovedDocumentImages } from "./s3";
+import { getPresignedGetUrl } from "./s3";
+import { updateDocumentAction } from "./document-save";
 import { permanentlyDeleteDocumentAction } from "./document-permanent-delete";
 import {
   softDeleteDocumentAction,
@@ -224,38 +223,6 @@ function extractLinks(content: any): string[] {
   return Array.from(links);
 }
 
-function normalizeImageKey(urlOrKey: string): string {
-  try {
-    const urlObj = new URL(urlOrKey);
-    let path = decodeURIComponent(urlObj.pathname);
-    if (path.startsWith("/")) path = path.substring(1);
-    if (path.startsWith("deleted/uploads/")) path = path.substring(16);
-    else if (path.startsWith("uploads/")) path = path.substring(8);
-    return path;
-  } catch {
-    let path = urlOrKey.startsWith("/") ? urlOrKey.substring(1) : urlOrKey;
-    if (path.startsWith("deleted/uploads/")) path = path.substring(16);
-    else if (path.startsWith("uploads/")) path = path.substring(8);
-    return path;
-  }
-}
-
-function getTimestampMillis(ts: unknown): number | null {
-    if (!ts) return null;
-    if (typeof ts === "number") return ts;
-    if (ts instanceof Date) return ts.getTime();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (typeof (ts as any).toMillis === "function") return (ts as any).toMillis();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (typeof (ts as any).toDate === "function") return (ts as any).toDate().getTime();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (typeof (ts as any).seconds === "number") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (ts as any).seconds * 1000 + Math.floor(((ts as any).nanoseconds || 0) / 1_000_000);
-    }
-    return null;
-}
-
 export interface UpdateDocumentData extends Partial<Document> {
   baseRevision?: number | null;
   baseUpdatedAt?: Timestamp | Date | number | null;
@@ -277,231 +244,8 @@ export async function updateDocument(
   data: UpdateDocumentData,
   options?: UpdateDocumentOptions
 ): Promise<UpdateDocumentResult> {
-  const docRef = doc(db, "documents", id);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-  const { id: _, content: contentField, baseRevision: dataBaseRevision, baseUpdatedAt: dataBaseUpdatedAt, ...updateData } = data as any;
-  const baseRevision = options?.baseRevision !== undefined ? options.baseRevision : dataBaseRevision;
-  const baseUpdatedAt = options?.baseUpdatedAt !== undefined ? options.baseUpdatedAt : dataBaseUpdatedAt;
-  updateData.updatedAt = serverTimestamp();
-
-  if (contentField !== undefined) {
-      // Mandatory base revision validation for all content saves
-      if (
-          baseRevision === undefined ||
-          baseRevision === null ||
-          typeof baseRevision !== "number" ||
-          !Number.isInteger(baseRevision) ||
-          baseRevision < 0
-      ) {
-          throw new Error("Cannot save document: missing or invalid base revision for content save.");
-      }
-
-      const newOutboundLinks = extractLinks(contentField);
-      const contentRef = doc(db, "documents", id, "content", "main");
-      
-      let hasPendingCleanup = false;
-      let docSpaceId = "";
-
-      await runTransaction(db, async (transaction) => {
-          // Phase 1: READ ALL
-          const docSnap = await transaction.get(docRef);
-          if (!docSnap.exists()) throw new Error("Doc not found");
-          
-          const currentDoc = docSnap.data();
-          const currentRevision = typeof currentDoc.revision === "number" ? currentDoc.revision : 0;
-
-          // Rule 0: Mandatory Stale-save protection (Optimistic Concurrency Control via Revision)
-          if (baseRevision !== currentRevision) {
-              throw new Error(
-                  "Cannot save document: document has been modified by another edit. Please reload before saving."
-              );
-          }
-
-          docSpaceId = currentDoc.spaceId;
-          const oldOutboundLinks = currentDoc.outboundLinks || [];
-          
-          const added = newOutboundLinks.filter(l => !oldOutboundLinks.includes(l));
-          const removed = oldOutboundLinks.filter((l: string) => !newOutboundLinks.includes(l));
-          
-          // Pre-fetch all targets to ensure we read everything before any write
-          const allTargetIds = [...new Set([...added, ...removed])];
-          const targetSnaps: Record<string, DocumentSnapshot> = {};
-          
-          for (const targetId of allTargetIds) {
-             const targetRef = doc(db, "documents", targetId);
-             // Note: if targetId is same as id, we already read it in docSnap?
-             // Not necessarily for the purpose of this map, but firestore handles redundant reads if they are same ref efficiently usually.
-             // However, to be safe and avoid read-start-after-write if logic gets complex:
-             if (targetId === id) {
-                 targetSnaps[targetId] = docSnap;
-             } else {
-                 targetSnaps[targetId] = await transaction.get(targetRef);
-             }
-          }
-
-          // Read previous content in Phase 1
-          const contentSnap = await transaction.get(contentRef);
-          const previousContent = contentSnap.exists() ? contentSnap.data()?.content : null;
-          const oldImageUrls = extractImageUrls(previousContent);
-          const newImageUrls = extractImageUrls(contentField);
-
-          const newImageKeysSet = new Set(newImageUrls.map(normalizeImageKey));
-
-          // Rule 1A: Check if new content attempts to reference an image claimed for S3 deletion.
-          // Claim expiry enables cleanup recovery, but must NOT authorize reintroducing a key
-          // while an older S3 deletion can still be in flight or finish.
-          const activeClaim = currentDoc.imageCleanupClaim;
-          if (activeClaim && Array.isArray(activeClaim.keys) && activeClaim.keys.length > 0) {
-              const claimedKeysSet = new Set(activeClaim.keys.map(normalizeImageKey));
-              for (const newKey of Array.from(newImageKeysSet)) {
-                  if (claimedKeysSet.has(newKey)) {
-                      throw new Error(
-                          `Cannot save document: image is currently being deleted by a prior edit. Please re-upload the image.`
-                      );
-                  }
-              }
-          }
-
-          // Rule 1B: Check if new content attempts to reference an image that was already retired (deleted from S3)
-          const retiredKeys = currentDoc.retiredImageKeys;
-          if (Array.isArray(retiredKeys) && retiredKeys.length > 0) {
-              const retiredKeysSet = new Set(retiredKeys.map(normalizeImageKey));
-              for (const newKey of Array.from(newImageKeysSet)) {
-                  if (retiredKeysSet.has(newKey)) {
-                      throw new Error(
-                          `Cannot save document: image has been deleted by a prior edit. Please re-upload the image.`
-                      );
-                  }
-              }
-          }
-
-          const newlyRemoved = oldImageUrls.filter((u) => !newImageKeysSet.has(normalizeImageKey(u)));
-
-          const pendingSet = new Set<string>(
-              Array.isArray(currentDoc.pendingImageCleanup) ? currentDoc.pendingImageCleanup : []
-          );
-          for (const url of newlyRemoved) {
-              pendingSet.add(url);
-          }
-
-          // Rule 2: If new content contains/re-adds any previously pending image (not in active claim), rescue it
-          for (const key of Array.from(pendingSet)) {
-              if (newImageKeysSet.has(normalizeImageKey(key))) {
-                  pendingSet.delete(key);
-              }
-          }
-
-          hasPendingCleanup = pendingSet.size > 0;
-
-          // Phase 2: WRITE ALL
-          
-          const nextRevision = currentRevision + 1;
-          // Update main doc
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const docUpdatePayload: Record<string, any> = {
-              ...updateData,
-              revision: nextRevision,
-              outboundLinks: newOutboundLinks
-          };
-          if (hasPendingCleanup) {
-              docUpdatePayload.pendingImageCleanup = Array.from(pendingSet);
-          } else if (currentDoc.pendingImageCleanup !== undefined) {
-              docUpdatePayload.pendingImageCleanup = deleteField();
-          }
-
-          transaction.update(docRef, docUpdatePayload);
-
-          // Write to subcollection
-          transaction.set(contentRef, { content: contentField });
-          
-          // Update added backlinks
-          for (const targetId of added) {
-              const targetRef = doc(db, "documents", targetId);
-              const targetSnap = targetSnaps[targetId];
-              
-              if (targetSnap.exists()) {
-                  const targetData = targetSnap.data();
-                  const backlinks = targetData.backlinks || [];
-                  if (!backlinks.includes(id)) {
-                      transaction.update(targetRef, {
-                          backlinks: [...backlinks, id]
-                      });
-                  }
-              }
-          }
-          
-          // Update removed backlinks
-          for (const targetId of removed) {
-              const targetRef = doc(db, "documents", targetId);
-              const targetSnap = targetSnaps[targetId]; // Use pre-fetched snapshot
-              
-              if (targetSnap.exists()) {
-                   const targetData = targetSnap.data();
-                   const backlinks = targetData.backlinks || [];
-                   const newBacklinks = backlinks.filter((bid: string) => bid !== id);
-                   transaction.update(targetRef, {
-                       backlinks: newBacklinks
-                   });
-              }
-          }
-      });
-
-      if (hasPendingCleanup) {
-          const idToken = await auth.currentUser?.getIdToken();
-          if (docSpaceId) {
-              try {
-                  const cleanupResult = await cleanupRemovedDocumentImages(idToken, docSpaceId, id);
-                  if (cleanupResult && cleanupResult.remainingPendingCount > 0) {
-                      return { contentSaved: true, cleanupPending: true };
-                  }
-                  return { contentSaved: true, cleanupPending: false };
-              } catch (cleanupErr) {
-                  console.warn("Storage cleanup for removed images failed post-save; pendingImageCleanup retained for retry:", cleanupErr);
-                  return {
-                      contentSaved: true,
-                      cleanupPending: true,
-                      cleanupError: cleanupErr instanceof Error ? cleanupErr.message : "Cleanup failed",
-                  };
-              }
-          }
-      }
-
-      return { contentSaved: true, cleanupPending: false };
-  } else {
-      if (baseRevision !== undefined && baseRevision !== null) {
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-              const currentDoc = docSnap.data();
-              const currentRevision = typeof currentDoc.revision === "number" ? currentDoc.revision : 0;
-              if (
-                  typeof baseRevision !== "number" ||
-                  !Number.isInteger(baseRevision) ||
-                  baseRevision < 0 ||
-                  baseRevision !== currentRevision
-              ) {
-                  throw new Error(
-                      "Cannot save document: document has been modified by another edit. Please reload before saving."
-                  );
-              }
-              updateData.revision = currentRevision + 1;
-          }
-      } else if (baseUpdatedAt !== undefined && baseUpdatedAt !== null) {
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-              const currentDoc = docSnap.data();
-              const currentMillis =
-                  getTimestampMillis(currentDoc.updatedAt) ?? getTimestampMillis(currentDoc.createdAt);
-              const baseMillis = getTimestampMillis(baseUpdatedAt);
-              if (currentMillis !== null && baseMillis !== null && currentMillis !== baseMillis) {
-                  throw new Error(
-                      "Cannot save document: document has been modified by another edit. Please reload before saving."
-                  );
-              }
-          }
-      }
-      await updateDoc(docRef, updateData);
-      return { contentSaved: true, cleanupPending: false };
-  }
+  const idToken = await auth.currentUser?.getIdToken();
+  return updateDocumentAction(idToken, id, data, options);
 }
 
 export interface DeleteDocumentOptions {
