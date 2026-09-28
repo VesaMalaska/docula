@@ -31,6 +31,7 @@ function createFallbackRect(): DOMRect {
 export function createLinkSuggestionRenderer() {
   let component: ReactRenderer | undefined;
   let popup: Instance[] | undefined;
+  let lastValidRect: DOMRect | undefined;
 
   const destroy = () => {
     if (popup?.[0]) {
@@ -43,6 +44,18 @@ export function createLinkSuggestionRenderer() {
       component.destroy();
       component = undefined;
     }
+    lastValidRect = undefined;
+  };
+
+  const getReferenceClientRect = (clientRect: () => DOMRect | null) => {
+    return () => {
+      const rect = clientRect();
+      if (rect) {
+        lastValidRect = rect;
+        return rect;
+      }
+      return lastValidRect ?? createFallbackRect();
+    };
   };
 
   return {
@@ -54,15 +67,16 @@ export function createLinkSuggestionRenderer() {
         editor: props.editor,
       });
 
-      if (!props.clientRect) {
+      const initialRect = props.clientRect ? props.clientRect() : null;
+      if (!props.clientRect || !initialRect) {
         return;
       }
 
+      lastValidRect = initialRect;
       const clientRect = props.clientRect;
-      const getReferenceClientRect = () => clientRect() ?? createFallbackRect();
 
       popup = tippyFn('body', {
-        getReferenceClientRect,
+        getReferenceClientRect: getReferenceClientRect(clientRect),
         appendTo: () => document.body,
         content: component.element,
         showOnCreate: true,
@@ -75,17 +89,20 @@ export function createLinkSuggestionRenderer() {
     onUpdate(props: SuggestionProps) {
       component?.updateProps(props);
 
-      if (!props.clientRect) {
+      const clientRect = props.clientRect;
+      if (!clientRect) {
         return;
       }
 
-      const clientRect = props.clientRect;
-      const getReferenceClientRect = () => clientRect() ?? createFallbackRect();
+      const currentRect = clientRect();
+      if (currentRect) {
+        lastValidRect = currentRect;
+      }
 
       if (!popup) {
-        if (component) {
+        if (lastValidRect && component) {
           popup = tippyFn('body', {
-            getReferenceClientRect,
+            getReferenceClientRect: getReferenceClientRect(clientRect),
             appendTo: () => document.body,
             content: component.element,
             showOnCreate: true,
@@ -98,7 +115,7 @@ export function createLinkSuggestionRenderer() {
       }
 
       popup[0].setProps({
-        getReferenceClientRect,
+        getReferenceClientRect: getReferenceClientRect(clientRect),
       });
     },
 

@@ -651,7 +651,7 @@ describe("Document Link Suggestions - Tippy Lifecycle & Cleanup", () => {
     }
   });
 
-  it("handles a clientRect callback that returns null during start and update without violating Tippy contract", () => {
+  it("does not display newly opened popup until real cursor rect is available, and preserves last valid position on null update", () => {
     const warnings: string[] = [];
     const originalWarn = console.warn;
     console.warn = (...args: unknown[]) => {
@@ -667,35 +667,62 @@ describe("Document Link Suggestions - Tippy Lifecycle & Cleanup", () => {
 
       renderer.onStart({ editor: mockEditor as never, clientRect: clientRectCallback });
 
-      const instance = bodyElem._tippy;
-      assert.ok(instance, "Tippy instance should be created when clientRect callback is provided");
+      // 1. Newly opened popup must not be displayed while cursor rect is null (avoiding origin (0,0) display)
+      assert.strictEqual(bodyElem._tippy, undefined, "Popup must not be displayed at start when clientRect returns null");
 
-      // Verify that Tippy getReferenceClientRect returns a non-null rect even when cursor rect is null
-      const rect1 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
-      assert.ok(rect1, "getReferenceClientRect must never return null");
-      assert.strictEqual(rect1.width, 0);
-      assert.strictEqual(rect1.height, 0);
-
-      // onUpdate while cursor rect is still null
+      // 2. onUpdate while cursor rect is still null keeps popup unrendered
       renderer.onUpdate({ editor: mockEditor as never, clientRect: clientRectCallback });
-      const rect2 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
-      assert.ok(rect2, "getReferenceClientRect must never return null after update with null rect");
-      assert.strictEqual(rect2.width, 0);
+      assert.strictEqual(bodyElem._tippy, undefined, "Popup must remain unmounted while clientRect continues returning null");
 
-      // onUpdate when cursor rect becomes available
+      // 3. onUpdate when real cursor rect becomes available initializes and displays popup
       currentRect = { top: 15, left: 25, bottom: 35, right: 45, width: 20, height: 20, x: 25, y: 15, toJSON: () => ({}) } as unknown as DOMRect;
       renderer.onUpdate({ editor: mockEditor as never, clientRect: clientRectCallback });
-      const rect3 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
-      assert.ok(rect3);
-      assert.strictEqual(rect3.top, 15);
-      assert.strictEqual(rect3.left, 25);
 
-      // Clean exit and unmount
+      const instance = bodyElem._tippy;
+      assert.ok(instance, "Popup must be displayed once a valid cursor rect is available");
+
+      const rect1 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
+      assert.ok(rect1, "getReferenceClientRect must never return null");
+      assert.strictEqual(rect1.top, 15);
+      assert.strictEqual(rect1.left, 25);
+
+      // 4. onUpdate when visible popup temporarily loses its rectangle: keeps last valid position
+      currentRect = null;
+      renderer.onUpdate({ editor: mockEditor as never, clientRect: clientRectCallback });
+
+      const rect2 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
+      assert.ok(rect2, "getReferenceClientRect must satisfy non-null contract when rect is lost");
+      assert.strictEqual(rect2.top, 15, "Must preserve last valid top position instead of jumping to 0");
+      assert.strictEqual(rect2.left, 25, "Must preserve last valid left position instead of jumping to 0");
+
+      // 5. Clean exit and unmount without double destroy
       renderer.onExit();
       assert.strictEqual(instance.state.isDestroyed, true);
       renderer.onExit();
 
       assert.strictEqual(warnings.length, 0, "No warnings emitted");
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("safely exits when clientRect returned null for the entire session without opening popup", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+      renderer.onStart({ editor: mockEditor as never, clientRect: () => null });
+      assert.strictEqual(bodyElem._tippy, undefined);
+
+      renderer.onExit();
+      assert.strictEqual(bodyElem._tippy, undefined);
+      renderer.onExit();
+
+      assert.strictEqual(warnings.length, 0);
     } finally {
       console.warn = originalWarn;
     }
