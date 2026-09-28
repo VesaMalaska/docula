@@ -315,10 +315,10 @@ service cloud.firestore {
         !isProtectedDocKeyModified(request.resource.data.diff(resource.data));
 
       match /content/{contentId} {
-        allow read: if isAuthenticated() && (
-          canReadSpace(getDocumentSpaceId(documentId)) ||
-          canCleanupDocument(getDocumentSpaceId(documentId))
-        );
+        allow read: if isAuthenticated() &&
+          documentExists(documentId) &&
+          isDocumentActive(getDocumentData(documentId)) &&
+          canReadSpace(getDocumentData(documentId).spaceId);
         allow create: if isAuthenticated() && canContributeToSpace(getDocumentSpaceId(documentId)) && !isDocumentClaimedById(documentId) && !documentExists(documentId);
         allow update: if false;
         // Disallow direct client permanent deletion in active spaces.

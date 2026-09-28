@@ -463,7 +463,7 @@ export default function DocPage() {
   });
 
   if (isLoading) return <DocSkeleton />;
-  if (!doc || !space || space.deletedAt) {
+  if (!doc || !space || space.deletedAt || doc.deleted || doc.deletedAt != null) {
     notFound();
   }
 

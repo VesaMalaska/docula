@@ -23,7 +23,6 @@ import {
   writeBatch,
   deleteField,
 } from "firebase/firestore";
-import { extractImageUrls } from "../utils.ts";
 
 const isEmulatorRunning = !!process.env.FIRESTORE_EMULATOR_HOST;
 
@@ -1375,7 +1374,7 @@ if (!isEmulatorRunning) {
         );
       });
 
-      test("owner executes complete permanent-deletion cascade: enumerate, extract images, delete content, delete doc, delete space", async () => {
+      test("owner executes complete permanent-deletion cascade: enumerate, delete content, delete doc, direct space delete closed", async () => {
         const alice = testEnv.authenticatedContext("alice").firestore();
 
         // Step 1: Enumerate documents via query
@@ -1386,31 +1385,20 @@ if (!isEmulatorRunning) {
         const docsSnap = await assertSucceeds(getDocs(docQuery));
         assert.equal(docsSnap.docs.length, 2);
 
-        const discoveredImages: string[] = [];
-
-        // Step 2: For each document, read content to extract images and delete content subcollection + doc
+        // Step 2: Content reading is denied even to space owner during cleanup; owner can delete content subcollection + doc
         for (const docItem of docsSnap.docs) {
           const docId = docItem.id;
           const contentRef = doc(alice, `documents/${docId}/content`, "main");
 
-          // Owner can read content subcollection during cleanup
-          const contentSnap = await assertSucceeds(getDoc(contentRef));
-          if (contentSnap.exists()) {
-            const content = contentSnap.data()?.content;
-            const images = extractImageUrls(content);
-            discoveredImages.push(...images);
+          // Direct client reading of content in soft-deleted space is denied
+          await assertFails(getDoc(contentRef));
 
-            // Owner can delete content subcollection record
-            await assertSucceeds(deleteDoc(contentRef));
-          }
+          // Owner can delete content subcollection record
+          await assertSucceeds(deleteDoc(contentRef));
 
           // Owner can delete the document record
           await assertSucceeds(deleteDoc(doc(alice, "documents", docId)));
         }
-
-        // Verify that image reference was discovered from content subcollection
-        assert.equal(discoveredImages.length, 1);
-        assert.equal(discoveredImages[0], "https://my-bucket.s3.us-east-1.amazonaws.com/uploads/diagram.png");
 
         // Step 3: Direct-client Space deletion is closed in rules (must use server action)
         await assertFails(deleteDoc(doc(alice, "spaces", cascadeSpaceId)));
@@ -1514,8 +1502,8 @@ if (!isEmulatorRunning) {
             updatedAt: serverTimestamp(),
           })
         );
-        // - Alice (owner) CAN read and delete document & content for permanent cleanup
-        await assertSucceeds(getDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
+        // - Alice (owner) cannot read content, but CAN delete document & content for permanent cleanup
+        await assertFails(getDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
         await assertSucceeds(deleteDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
         await assertSucceeds(deleteDoc(doc(alice, "documents", activeDocId)));
         // - Direct client space deletion is closed in rules (must use server action)
@@ -2510,7 +2498,9 @@ if (!isEmulatorRunning) {
       const deletedSpaceId = "space-perm-del-deleted";
       const activeDocId = "doc-perm-active";
       const softDeletedDocId = "doc-perm-soft";
+      const softDeletedTsOnlyDocId = "doc-perm-soft-ts-only";
       const docInDeletedSpaceId = "doc-in-deleted-space-perm";
+      const activeDocInDeletedSpaceId = "doc-active-in-deleted-space-perm";
 
       beforeEach(async () => {
         await testEnv.withSecurityRulesDisabled(async (context) => {
@@ -2573,6 +2563,23 @@ if (!isEmulatorRunning) {
             updatedAt: serverTimestamp(),
           });
 
+          // Soft-deleted document with timestamp but deleted: false (legacy schema edge case)
+          await setDoc(doc(db, "documents", softDeletedTsOnlyDocId), {
+            spaceId: activeSpaceId,
+            title: "Soft Deleted TS Only",
+            parentId: null,
+            path: [],
+            deleted: false,
+            deletedAt: serverTimestamp(),
+            deletedBy: "bob",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${softDeletedTsOnlyDocId}/content`, "main"), {
+            content: "Soft deleted TS only content",
+            updatedAt: serverTimestamp(),
+          });
+
           // Document and content in deleted space
           await setDoc(doc(db, "documents", docInDeletedSpaceId), {
             spaceId: deletedSpaceId,
@@ -2587,6 +2594,22 @@ if (!isEmulatorRunning) {
           });
           await setDoc(doc(db, `documents/${docInDeletedSpaceId}/content`, "main"), {
             content: "Content in deleted space",
+            updatedAt: serverTimestamp(),
+          });
+
+          // Active document and content in deleted space (to prove space soft-deletion denies content access even if doc is active)
+          await setDoc(doc(db, "documents", activeDocInDeletedSpaceId), {
+            spaceId: deletedSpaceId,
+            title: "Active Doc in Deleted Space",
+            parentId: null,
+            path: [],
+            deleted: false,
+            deletedAt: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          await setDoc(doc(db, `documents/${activeDocInDeletedSpaceId}/content`, "main"), {
+            content: "Active doc content in deleted space",
             updatedAt: serverTimestamp(),
           });
         });
@@ -2622,6 +2645,75 @@ if (!isEmulatorRunning) {
 
         await assertFails(deleteDoc(doc(bob, `documents/${softDeletedDocId}/content`, "main")));
         await assertFails(deleteDoc(doc(alice, `documents/${softDeletedDocId}/content`, "main")));
+      });
+
+      test("direct client cannot read soft-deleted document content from an active Space", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(getDoc(doc(bob, `documents/${softDeletedDocId}/content`, "main")));
+        await assertFails(getDoc(doc(alice, `documents/${softDeletedDocId}/content`, "main")));
+      });
+
+      test("direct client cannot read soft-deleted document content when deletedAt is set even if deleted is false", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertFails(getDoc(doc(bob, `documents/${softDeletedTsOnlyDocId}/content`, "main")));
+        await assertFails(getDoc(doc(alice, `documents/${softDeletedTsOnlyDocId}/content`, "main")));
+      });
+
+      test("direct client cannot read content of a non-existent document", async () => {
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        await assertFails(getDoc(doc(bob, "documents/nonexistent-doc-id/content", "main")));
+      });
+
+      test("direct client cannot read document content in a soft-deleted Space (denied to owner, member, and non-member)", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+        const charlie = testEnv.authenticatedContext("charlie").firestore();
+
+        // Soft-deleted document content in soft-deleted space
+        await assertFails(getDoc(doc(alice, `documents/${docInDeletedSpaceId}/content`, "main")));
+        await assertFails(getDoc(doc(bob, `documents/${docInDeletedSpaceId}/content`, "main")));
+        await assertFails(getDoc(doc(charlie, `documents/${docInDeletedSpaceId}/content`, "main")));
+
+        // Active document content in soft-deleted space
+        await assertFails(getDoc(doc(alice, `documents/${activeDocInDeletedSpaceId}/content`, "main")));
+        await assertFails(getDoc(doc(bob, `documents/${activeDocInDeletedSpaceId}/content`, "main")));
+        await assertFails(getDoc(doc(charlie, `documents/${activeDocInDeletedSpaceId}/content`, "main")));
+      });
+
+      test("direct client CAN read active document content in an active Space", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        await assertSucceeds(getDoc(doc(bob, `documents/${activeDocId}/content`, "main")));
+        await assertSucceeds(getDoc(doc(alice, `documents/${activeDocId}/content`, "main")));
+      });
+
+      test("direct client CAN read soft-deleted document metadata in active Space for Trashbin and restore", async () => {
+        const alice = testEnv.authenticatedContext("alice").firestore();
+        const bob = testEnv.authenticatedContext("bob").firestore();
+
+        // Individual metadata read required by restoreDocument
+        await assertSucceeds(getDoc(doc(bob, "documents", softDeletedDocId)));
+        await assertSucceeds(getDoc(doc(alice, "documents", softDeletedDocId)));
+
+        // Filtered query required by Trashbin getDeletedDocuments
+        const q = query(
+          collection(bob, "documents"),
+          where("spaceId", "==", activeSpaceId),
+          where("deleted", "==", true)
+        );
+        await assertSucceeds(getDocs(q));
+      });
+
+      test("direct client cannot read soft-deleted document metadata or content as an unauthorized user", async () => {
+        const charlie = testEnv.authenticatedContext("charlie").firestore();
+
+        await assertFails(getDoc(doc(charlie, "documents", softDeletedDocId)));
+        await assertFails(getDoc(doc(charlie, `documents/${softDeletedDocId}/content`, "main")));
       });
 
       test("direct client cannot hard-delete document as an unauthorized user", async () => {

@@ -143,6 +143,10 @@ export async function getDocument(id: string): Promise<Document | null> {
         ...data 
     } as Document;
 
+    if (Boolean(docData.deleted) || docData.deletedAt != null) {
+      return null;
+    }
+
     // Fetch content from subcollection
     const contentRef = doc(db, "documents", id, "content", "main");
     let contentSnap: DocumentSnapshot;
