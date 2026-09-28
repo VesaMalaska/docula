@@ -273,4 +273,112 @@ describe("getDocument error handling & existence resolution", () => {
     // Initial attempt + 2 retries = 3 total attempts
     assert.strictEqual(transientAttemptCount, 3);
   });
+
+  it("8. Soft-deleted document with deleted === true resolves to null and avoids content subcollection read", async () => {
+    let contentReadAttempted = false;
+    getDocMock.mock.mockImplementation(async (ref: { collectionName?: string; id?: string; rest?: string[] }) => {
+      if (ref.rest && ref.rest.length > 0) {
+        contentReadAttempted = true;
+        return {
+          exists: () => true,
+          data: () => ({ content: { type: "doc", content: [{ type: "paragraph", text: "Secret deleted content" }] } }),
+        };
+      }
+      return {
+        id: "doc-soft-deleted-1",
+        exists: () => true,
+        data: () => ({
+          spaceId: "space-abc",
+          title: "Deleted Architecture Guide",
+          deleted: true,
+          deletedAt: { toDate: () => new Date() },
+          deletedBy: "user-1",
+        }),
+      };
+    });
+
+    const result = await getDocument("doc-soft-deleted-1");
+    assert.strictEqual(result, null);
+    assert.strictEqual(contentReadAttempted, false, "Must not fetch content subcollection for soft-deleted document");
+  });
+
+  it("9. Soft-deleted document with deletedAt timestamp resolves to null and avoids content subcollection read", async () => {
+    let contentReadAttempted = false;
+    getDocMock.mock.mockImplementation(async (ref: { collectionName?: string; id?: string; rest?: string[] }) => {
+      if (ref.rest && ref.rest.length > 0) {
+        contentReadAttempted = true;
+        return {
+          exists: () => true,
+          data: () => ({ content: { type: "doc" } }),
+        };
+      }
+      return {
+        id: "doc-soft-deleted-2",
+        exists: () => true,
+        data: () => ({
+          spaceId: "space-abc",
+          title: "Deleted Doc with Timestamp",
+          deleted: false,
+          deletedAt: { toDate: () => new Date() },
+        }),
+      };
+    });
+
+    const result = await getDocument("doc-soft-deleted-2");
+    assert.strictEqual(result, null);
+    assert.strictEqual(contentReadAttempted, false, "Must not fetch content subcollection when deletedAt is set");
+  });
+
+  it("10. Soft-deleted document query completes in one fetch without retry loop", async () => {
+    let fetchAttemptCount = 0;
+    getDocMock.mock.mockImplementation(async () => {
+      fetchAttemptCount++;
+      return {
+        id: "doc-soft-deleted-3",
+        exists: () => true,
+        data: () => ({
+          spaceId: "space-abc",
+          title: "Soft Deleted Doc",
+          deleted: true,
+          deletedAt: { toDate: () => new Date() },
+        }),
+      };
+    });
+
+    const queryClient = new QueryClient();
+    const queryResult = await queryClient.fetchQuery({
+      queryKey: ["doc", "doc-soft-deleted-3"],
+      queryFn: () => getDocument("doc-soft-deleted-3"),
+    });
+
+    assert.strictEqual(queryResult, null);
+    assert.strictEqual(fetchAttemptCount, 1);
+  });
+
+  it("11. Soft-deleted document with deleted === true and deletedAt null resolves to null and avoids content subcollection read", async () => {
+    let contentReadAttempted = false;
+    getDocMock.mock.mockImplementation(async (ref: { collectionName?: string; id?: string; rest?: string[] }) => {
+      if (ref.rest && ref.rest.length > 0) {
+        contentReadAttempted = true;
+        return {
+          exists: () => true,
+          data: () => ({ content: { type: "doc" } }),
+        };
+      }
+      return {
+        id: "doc-soft-deleted-4",
+        exists: () => true,
+        data: () => ({
+          spaceId: "space-abc",
+          title: "Legacy Deleted Doc without Timestamp",
+          deleted: true,
+          deletedAt: null,
+        }),
+      };
+    });
+
+    const result = await getDocument("doc-soft-deleted-4");
+    assert.strictEqual(result, null);
+    assert.strictEqual(contentReadAttempted, false, "Must not fetch content subcollection for legacy soft-deleted document");
+  });
 });
