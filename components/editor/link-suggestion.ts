@@ -1,11 +1,138 @@
 
 import { Extension } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
+import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import { ReactRenderer } from '@tiptap/react';
 import tippy from 'tippy.js';
+import type { Instance } from 'tippy.js';
 import { SuggestionList } from './suggestion-list';
 import { searchDocuments } from '@/lib/actions/document';
 import { PluginKey } from '@tiptap/pm/state';
+
+const tippyFn = typeof tippy === 'function' ? tippy : (tippy as unknown as { default: typeof tippy }).default;
+
+function createFallbackRect(): DOMRect {
+  if (typeof DOMRect !== 'undefined') {
+    return new DOMRect(0, 0, 0, 0);
+  }
+  return {
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
+    width: 0,
+    height: 0,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  };
+}
+
+export function createLinkSuggestionRenderer() {
+  let component: ReactRenderer | undefined;
+  let popup: Instance[] | undefined;
+  let lastValidRect: DOMRect | undefined;
+
+  const destroy = () => {
+    if (popup?.[0]) {
+      if (!popup[0].state.isDestroyed) {
+        popup[0].destroy();
+      }
+      popup = undefined;
+    }
+    if (component) {
+      component.destroy();
+      component = undefined;
+    }
+    lastValidRect = undefined;
+  };
+
+  const getReferenceClientRect = (clientRect: () => DOMRect | null) => {
+    return () => {
+      const rect = clientRect();
+      if (rect) {
+        lastValidRect = rect;
+        return rect;
+      }
+      return lastValidRect ?? createFallbackRect();
+    };
+  };
+
+  return {
+    onStart: (props: SuggestionProps) => {
+      destroy();
+
+      component = new ReactRenderer(SuggestionList, {
+        props,
+        editor: props.editor,
+      });
+
+      const initialRect = props.clientRect ? props.clientRect() : null;
+      if (!props.clientRect || !initialRect) {
+        return;
+      }
+
+      lastValidRect = initialRect;
+      const clientRect = props.clientRect;
+
+      popup = tippyFn('body', {
+        getReferenceClientRect: getReferenceClientRect(clientRect),
+        appendTo: () => document.body,
+        content: component.element,
+        showOnCreate: true,
+        interactive: true,
+        trigger: 'manual',
+        placement: 'bottom-start',
+      });
+    },
+
+    onUpdate(props: SuggestionProps) {
+      component?.updateProps(props);
+
+      const clientRect = props.clientRect;
+      if (!clientRect) {
+        return;
+      }
+
+      const currentRect = clientRect();
+      if (currentRect) {
+        lastValidRect = currentRect;
+      }
+
+      if (!popup) {
+        if (lastValidRect && component) {
+          popup = tippyFn('body', {
+            getReferenceClientRect: getReferenceClientRect(clientRect),
+            appendTo: () => document.body,
+            content: component.element,
+            showOnCreate: true,
+            interactive: true,
+            trigger: 'manual',
+            placement: 'bottom-start',
+          });
+        }
+        return;
+      }
+
+      popup[0].setProps({
+        getReferenceClientRect: getReferenceClientRect(clientRect),
+      });
+    },
+
+    onKeyDown(props: SuggestionKeyDownProps) {
+      if (props.event.key === 'Escape') {
+        popup?.[0]?.hide();
+        return true;
+      }
+
+      return (component?.ref as { onKeyDown?: (props: SuggestionKeyDownProps) => boolean } | null)?.onKeyDown?.(props) ?? false;
+    },
+
+    onExit() {
+      destroy();
+    },
+  };
+}
 
 export const LinkSuggestion = Extension.create({
   name: 'linkSuggestion',
@@ -64,59 +191,7 @@ export const LinkSuggestion = Extension.create({
             const results = await searchDocuments(query, this.options.spaceId, this.options.currentDocId);
             return results;
         },
-        render: () => {
-            let component: any;
-            let popup: any;
-
-            return {
-                onStart: (props: any) => {
-                    component = new ReactRenderer(SuggestionList, {
-                        props,
-                        editor: props.editor,
-                    })
-
-                    if (!props.clientRect) {
-                        return
-                    }
-
-                    popup = tippy('body', {
-                        getReferenceClientRect: props.clientRect,
-                        appendTo: () => document.body,
-                        content: component.element,
-                        showOnCreate: true,
-                        interactive: true,
-                        trigger: 'manual',
-                        placement: 'bottom-start',
-                    })
-                },
-
-                onUpdate(props: any) {
-                    component.updateProps(props)
-
-                    if (!props.clientRect) {
-                        return
-                    }
-
-                    popup[0].setProps({
-                        getReferenceClientRect: props.clientRect,
-                    })
-                },
-
-                onKeyDown(props: any) {
-                    if (props.event.key === 'Escape') {
-                        popup[0].hide()
-                        return true
-                    }
-
-                    return component.ref?.onKeyDown(props)
-                },
-
-                onExit() {
-                    popup[0].destroy()
-                    component.destroy()
-                },
-            }
-        },
+        render: createLinkSuggestionRenderer,
       }),
     ];
   },
