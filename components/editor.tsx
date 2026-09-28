@@ -95,6 +95,7 @@ export function Editor({
       }),
       LinkSuggestion.configure({
         spaceId: spaceId,
+        currentDocId: docId,
       }),
       Table.configure({
         resizable: true,
