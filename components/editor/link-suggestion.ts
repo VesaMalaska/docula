@@ -11,6 +11,23 @@ import { PluginKey } from '@tiptap/pm/state';
 
 const tippyFn = typeof tippy === 'function' ? tippy : (tippy as unknown as { default: typeof tippy }).default;
 
+function createFallbackRect(): DOMRect {
+  if (typeof DOMRect !== 'undefined') {
+    return new DOMRect(0, 0, 0, 0);
+  }
+  return {
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
+    width: 0,
+    height: 0,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  };
+}
+
 export function createLinkSuggestionRenderer() {
   let component: ReactRenderer | undefined;
   let popup: Instance[] | undefined;
@@ -41,8 +58,11 @@ export function createLinkSuggestionRenderer() {
         return;
       }
 
+      const clientRect = props.clientRect;
+      const getReferenceClientRect = () => clientRect() ?? createFallbackRect();
+
       popup = tippyFn('body', {
-        getReferenceClientRect: props.clientRect,
+        getReferenceClientRect,
         appendTo: () => document.body,
         content: component.element,
         showOnCreate: true,
@@ -59,8 +79,26 @@ export function createLinkSuggestionRenderer() {
         return;
       }
 
-      popup?.[0]?.setProps({
-        getReferenceClientRect: props.clientRect,
+      const clientRect = props.clientRect;
+      const getReferenceClientRect = () => clientRect() ?? createFallbackRect();
+
+      if (!popup) {
+        if (component) {
+          popup = tippyFn('body', {
+            getReferenceClientRect,
+            appendTo: () => document.body,
+            content: component.element,
+            showOnCreate: true,
+            interactive: true,
+            trigger: 'manual',
+            placement: 'bottom-start',
+          });
+        }
+        return;
+      }
+
+      popup[0].setProps({
+        getReferenceClientRect,
       });
     },
 

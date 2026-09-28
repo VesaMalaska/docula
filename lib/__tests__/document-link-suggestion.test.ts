@@ -651,6 +651,90 @@ describe("Document Link Suggestions - Tippy Lifecycle & Cleanup", () => {
     }
   });
 
+  it("handles a clientRect callback that returns null during start and update without violating Tippy contract", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+
+      // clientRect callback that returns null initially
+      let currentRect: DOMRect | null = null;
+      const clientRectCallback = () => currentRect;
+
+      renderer.onStart({ editor: mockEditor as never, clientRect: clientRectCallback });
+
+      const instance = bodyElem._tippy;
+      assert.ok(instance, "Tippy instance should be created when clientRect callback is provided");
+
+      // Verify that Tippy getReferenceClientRect returns a non-null rect even when cursor rect is null
+      const rect1 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
+      assert.ok(rect1, "getReferenceClientRect must never return null");
+      assert.strictEqual(rect1.width, 0);
+      assert.strictEqual(rect1.height, 0);
+
+      // onUpdate while cursor rect is still null
+      renderer.onUpdate({ editor: mockEditor as never, clientRect: clientRectCallback });
+      const rect2 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
+      assert.ok(rect2, "getReferenceClientRect must never return null after update with null rect");
+      assert.strictEqual(rect2.width, 0);
+
+      // onUpdate when cursor rect becomes available
+      currentRect = { top: 15, left: 25, bottom: 35, right: 45, width: 20, height: 20, x: 25, y: 15, toJSON: () => ({}) } as unknown as DOMRect;
+      renderer.onUpdate({ editor: mockEditor as never, clientRect: clientRectCallback });
+      const rect3 = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
+      assert.ok(rect3);
+      assert.strictEqual(rect3.top, 15);
+      assert.strictEqual(rect3.left, 25);
+
+      // Clean exit and unmount
+      renderer.onExit();
+      assert.strictEqual(instance.state.isDestroyed, true);
+      renderer.onExit();
+
+      assert.strictEqual(warnings.length, 0, "No warnings emitted");
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("initializes popup on update if clientRect was missing on start", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+
+      // onStart with missing clientRect callback
+      renderer.onStart({ editor: mockEditor as never, clientRect: null as never });
+      assert.strictEqual(bodyElem._tippy, undefined, "Popup not created when clientRect is missing");
+
+      // onUpdate now provides clientRect callback
+      const targetRect = { top: 50, left: 60, bottom: 70, right: 80, width: 20, height: 20, x: 60, y: 50, toJSON: () => ({}) } as unknown as DOMRect;
+      renderer.onUpdate({ editor: mockEditor as never, clientRect: () => targetRect });
+
+      const instance = bodyElem._tippy;
+      assert.ok(instance, "Popup should be initialized on update once clientRect is provided");
+
+      const rect = (instance as { props: { getReferenceClientRect: () => DOMRect } }).props.getReferenceClientRect();
+      assert.strictEqual(rect.top, 50);
+
+      renderer.onExit();
+      assert.strictEqual(instance.state.isDestroyed, true);
+      renderer.onExit();
+
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it("destroys prior unclosed popup if onStart is called again without onExit", () => {
     const warnings: string[] = [];
     const originalWarn = console.warn;
