@@ -91,7 +91,7 @@ mock.module("@/lib/firebase", {
 });
 
 const { searchDocuments } = await import("../actions/document.ts");
-const { LinkSuggestion } = await import("../../components/editor/link-suggestion.ts");
+const { LinkSuggestion, createLinkSuggestionRenderer } = await import("../../components/editor/link-suggestion.ts");
 
 describe("Document Link Suggestions - Current Document Exclusion", () => {
   const SPACE_ID = "space-test-123";
@@ -328,5 +328,404 @@ describe("Document Link Suggestions - Current Document Exclusion", () => {
         text: " ",
       },
     ]);
+  });
+});
+
+describe("Document Link Suggestions - Tippy Lifecycle & Cleanup", () => {
+  interface MockDomElement {
+    nodeType: number;
+    children: MockDomElement[];
+    readonly firstElementChild: MockDomElement | undefined;
+    hasAttribute: (name: string) => boolean;
+    getAttribute: (name: string) => string | null;
+    setAttribute: (name: string, val: string) => void;
+    removeAttribute: (name: string) => void;
+    addEventListener: (type: string, listener: () => void) => void;
+    removeEventListener: (type: string, listener: () => void) => void;
+    querySelectorAll: (sel: string) => MockDomElement[];
+    classList: { add: (...cls: string[]) => void; remove: (...cls: string[]) => void; contains: (cls: string) => boolean };
+    style: Record<string, string>;
+    appendChild: (child: MockDomElement) => MockDomElement;
+    removeChild: (child: MockDomElement) => void;
+    contains: (child: MockDomElement) => boolean;
+    ownerDocument: unknown;
+    _tippy?: {
+      id: number;
+      hide: () => void;
+      destroy: () => void;
+      state: { isDestroyed: boolean; isVisible: boolean };
+    };
+  }
+
+  function createMockElement(): MockDomElement {
+    const elem: MockDomElement = {
+      nodeType: 1,
+      children: [],
+      get firstElementChild() {
+        return this.children[0];
+      },
+      hasAttribute: () => false,
+      getAttribute: () => null,
+      setAttribute: () => {},
+      removeAttribute: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      querySelectorAll: () => [],
+      classList: {
+        add: () => {},
+        remove: () => {},
+        contains: () => false,
+      },
+      style: {},
+      appendChild: (child) => {
+        elem.children.push(child);
+        return child;
+      },
+      removeChild: () => {},
+      contains: () => false,
+      ownerDocument: null,
+    };
+    elem.ownerDocument = mockDoc;
+    return elem;
+  }
+
+  let bodyElem: MockDomElement;
+  let mockDoc: {
+    readonly body: MockDomElement;
+    documentElement: { style: Record<string, string> };
+    createElement: (tag: string) => MockDomElement;
+    createElementNS: (ns: string, tag: string) => MockDomElement;
+    createTextNode: (text: string) => MockDomElement;
+    querySelectorAll: (sel: string) => MockDomElement[];
+    addEventListener: () => void;
+    removeEventListener: () => void;
+  };
+
+  const mockEditor = {
+    isInitialized: false,
+    contentComponent: {
+      setRenderer: () => {},
+      removeRenderer: () => {},
+    },
+    extensionManager: {
+      extensions: [
+        {
+          name: "linkSuggestion",
+          options: { spaceId: "space-lifecycle", currentDocId: "doc-lifecycle" },
+        },
+      ],
+    },
+    state: {
+      selection: { $anchor: { pos: 0 } },
+    },
+    view: {
+      coordsAtPos: () => ({ top: 0, left: 0, bottom: 10, right: 10 }),
+      dom: null as unknown as MockDomElement,
+    },
+  };
+
+  const clientRect = () =>
+    ({
+      top: 10,
+      left: 20,
+      bottom: 30,
+      right: 40,
+      width: 20,
+      height: 20,
+    }) as unknown as DOMRect;
+
+  beforeEach(() => {
+    bodyElem = createMockElement();
+    mockDoc = {
+      get body() {
+        return bodyElem;
+      },
+      documentElement: { style: {} },
+      createElement: () => createMockElement(),
+      createElementNS: () => createMockElement(),
+      createTextNode: () => createMockElement(),
+      querySelectorAll: () => [bodyElem],
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    mockEditor.view.dom = bodyElem;
+
+    (globalThis as unknown as { document: unknown }).document = mockDoc;
+    (globalThis as unknown as { window: unknown }).window = globalThis;
+    (globalThis as unknown as { addEventListener: unknown }).addEventListener = () => {};
+    (globalThis as unknown as { removeEventListener: unknown }).removeEventListener = () => {};
+    (globalThis as unknown as { Element: unknown }).Element = class {};
+    (globalThis as unknown as { cancelAnimationFrame: unknown }).cancelAnimationFrame = () => {};
+    (globalThis as unknown as { requestAnimationFrame: unknown }).requestAnimationFrame = () => 0;
+  });
+
+  it("prevents double destruction when suggestion session closes and editor unmounts", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+
+      const instance = bodyElem._tippy;
+      assert.ok(instance, "Tippy instance must be attached to reference element");
+
+      let destroyCount = 0;
+      const originalDestroy = instance.destroy;
+      instance.destroy = () => {
+        destroyCount++;
+        originalDestroy.call(instance);
+      };
+
+      // First exit: selection or dismissal in the editor
+      renderer.onExit();
+      assert.strictEqual(destroyCount, 1, "First onExit must destroy the active Tippy popup");
+      assert.strictEqual(instance.state.isDestroyed, true, "Popup state must be marked destroyed");
+
+      // Second exit: editor unmounts (TipTap Suggestion plugin view.destroy hook calls onExit)
+      renderer.onExit();
+      assert.strictEqual(destroyCount, 1, "Second onExit must NOT attempt to destroy the already-destroyed instance");
+      assert.strictEqual(warnings.length, 0, "No Tippy memory leak or lifecycle warnings should be emitted");
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("dismisses popup with Escape by hiding it, then cleans up cleanly on exit", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+
+      const instance = bodyElem._tippy;
+      assert.ok(instance);
+
+      let hideCount = 0;
+      const originalHide = instance.hide;
+      instance.hide = () => {
+        hideCount++;
+        originalHide.call(instance);
+      };
+
+      let destroyCount = 0;
+      const originalDestroy = instance.destroy;
+      instance.destroy = () => {
+        destroyCount++;
+        originalDestroy.call(instance);
+      };
+
+      const handled = renderer.onKeyDown({ event: { key: "Escape" } as KeyboardEvent });
+      assert.strictEqual(handled, true, "Escape must be marked as handled");
+      assert.strictEqual(hideCount, 1, "Escape must call hide() on the Tippy instance");
+      assert.strictEqual(destroyCount, 0, "Escape should not immediately destroy the instance");
+
+      // Moving cursor away or editor unmount closes session
+      renderer.onExit();
+      assert.strictEqual(destroyCount, 1, "Exit must destroy the popup once");
+
+      // Subsequent editor unmount
+      renderer.onExit();
+      assert.strictEqual(destroyCount, 1, "Unmount after Escape dismissal must not double destroy");
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("cleans up active popup when editor unmounts while popup is still open", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+
+      const instance = bodyElem._tippy;
+      assert.ok(instance);
+
+      let destroyCount = 0;
+      const originalDestroy = instance.destroy;
+      instance.destroy = () => {
+        destroyCount++;
+        originalDestroy.call(instance);
+      };
+
+      // User navigates away while popup is still open: editor unmount calls onExit directly
+      renderer.onExit();
+      assert.strictEqual(destroyCount, 1, "Unmounting while open must clean up active popup");
+      assert.strictEqual(instance.state.isDestroyed, true);
+
+      // Repeated exit call is a safe no-op
+      renderer.onExit();
+      assert.strictEqual(destroyCount, 1);
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("handles repeated open and close suggestion cycles without double destroying any instance", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+
+      // Cycle 1
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+      const inst1 = bodyElem._tippy;
+      assert.ok(inst1);
+      let dest1 = 0;
+      const origDest1 = inst1.destroy;
+      inst1.destroy = () => {
+        dest1++;
+        origDest1.call(inst1);
+      };
+      renderer.onExit();
+      assert.strictEqual(dest1, 1);
+
+      // Cycle 2
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+      const inst2 = bodyElem._tippy;
+      assert.ok(inst2);
+      assert.notStrictEqual(inst1, inst2, "Cycle 2 must create a new Tippy instance");
+      let dest2 = 0;
+      const origDest2 = inst2.destroy;
+      inst2.destroy = () => {
+        dest2++;
+        origDest2.call(inst2);
+      };
+      renderer.onExit();
+      assert.strictEqual(dest2, 1);
+
+      // Final unmount of editor
+      renderer.onExit();
+      assert.strictEqual(dest1, 1, "First instance must not be destroyed again");
+      assert.strictEqual(dest2, 1, "Second instance must not be destroyed again");
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("safely handles missing clientRect without crashing or leaking", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+      // onStart with null clientRect
+      renderer.onStart({ editor: mockEditor as never, clientRect: null as never });
+
+      // onUpdate with null clientRect
+      renderer.onUpdate({ editor: mockEditor as never, clientRect: null as never });
+
+      // onKeyDown with Escape
+      const handled = renderer.onKeyDown({ event: { key: "Escape" } as KeyboardEvent });
+      assert.strictEqual(handled, true);
+
+      // onExit must not throw
+      renderer.onExit();
+      renderer.onExit();
+
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("destroys prior unclosed popup if onStart is called again without onExit", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const renderer = createLinkSuggestionRenderer();
+
+      // Open session 1
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+      const inst1 = bodyElem._tippy;
+      assert.ok(inst1);
+      let dest1 = 0;
+      const origDest1 = inst1.destroy;
+      inst1.destroy = () => {
+        dest1++;
+        origDest1.call(inst1);
+      };
+
+      // Open session 2 without calling onExit first
+      renderer.onStart({ editor: mockEditor as never, clientRect });
+      assert.strictEqual(dest1, 1, "Lingering session 1 popup must be destroyed when session 2 starts");
+
+      const inst2 = bodyElem._tippy;
+      assert.ok(inst2);
+      let dest2 = 0;
+      const origDest2 = inst2.destroy;
+      inst2.destroy = () => {
+        dest2++;
+        origDest2.call(inst2);
+      };
+
+      renderer.onExit();
+      assert.strictEqual(dest2, 1, "Session 2 popup must be destroyed on exit");
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("integrates with ProseMirror plugin view destroy lifecycle without double destroy", () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      const configured = LinkSuggestion.configure({
+        spaceId: "space-int",
+        currentDocId: "doc-int",
+      });
+
+      const addPlugins = LinkSuggestion.config.addProseMirrorPlugins;
+      assert.ok(typeof addPlugins === "function");
+
+      const plugins = addPlugins.call({
+        editor: mockEditor as never,
+        options: configured.options,
+      });
+
+      assert.strictEqual(plugins.length, 1);
+      const plugin = plugins[0];
+      assert.ok(plugin);
+
+      const viewPlugin = plugin.spec.view(mockEditor.view);
+      assert.ok(typeof viewPlugin.destroy === "function");
+
+      // Verify destroy executes cleanly without errors or warnings
+      viewPlugin.destroy();
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });
