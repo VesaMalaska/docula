@@ -429,7 +429,7 @@ export async function getSidebarTree(spaceId: string): Promise<SidebarNode[]> {
   return tree;
 }
 
-export async function searchDocuments(queryText: string, spaceId: string): Promise<{ id: string; title: string }[]> {
+export async function searchDocuments(queryText: string, spaceId: string, currentDocId?: string): Promise<{ id: string; title: string }[]> {
   try {
     // Firestore does not support native text search.
     // We will use a simple prefix match for now, or just client-side filtering if the set is small.
@@ -453,6 +453,7 @@ export async function searchDocuments(queryText: string, spaceId: string): Promi
     const lowerQuery = queryText.toLowerCase();
     
     querySnapshot.forEach((doc) => {
+        if (currentDocId && doc.id === currentDocId) return;
         const data = doc.data();
         if (data.deleted) return; 
 

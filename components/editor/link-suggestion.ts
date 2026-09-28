@@ -49,6 +49,7 @@ export const LinkSuggestion = Extension.create({
         },
       },
       spaceId: '',
+      currentDocId: '',
     };
   },
 
@@ -60,7 +61,7 @@ export const LinkSuggestion = Extension.create({
         items: async ({ query }: { query: string }) => {
             // Trigger on '[', but we might want to check context if needed.
             // For now, simple search.
-            const results = await searchDocuments(query, this.options.spaceId);
+            const results = await searchDocuments(query, this.options.spaceId, this.options.currentDocId);
             return results;
         },
         render: () => {
