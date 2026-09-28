@@ -306,6 +306,8 @@ const fakeAdminFirestore = {
         const queryState = {
             filters: [] as { field: string; op: string; val: unknown }[],
             limitVal: undefined as number | undefined,
+            startAfterId: undefined as string | undefined,
+            isOrdered: false,
         };
 
         const createQuery = () => ({
@@ -313,13 +315,21 @@ const fakeAdminFirestore = {
                 queryState.filters.push({ field, op, val });
                 return createQuery();
             }),
+            orderBy: mock.fn(() => {
+                queryState.isOrdered = true;
+                return createQuery();
+            }),
             limit: mock.fn((n: number) => {
                 queryState.limitVal = n;
                 return createQuery();
             }),
+            startAfter: mock.fn((snap: { id: string } | string) => {
+                queryState.startAfterId = typeof snap === "string" ? snap : snap?.id;
+                return createQuery();
+            }),
             get: mock.fn(async () => {
                 const store = colName === "spaces" ? spacesStore : documentsStore;
-                const matched: { id: string; ref: ReturnType<typeof createDocRef>; data: () => Record<string, unknown> }[] = [];
+                let matched: { id: string; ref: ReturnType<typeof createDocRef>; data: () => Record<string, unknown> }[] = [];
                 for (const [id, data] of store.entries()) {
                     let match = true;
                     for (const f of queryState.filters) {
@@ -336,8 +346,19 @@ const fakeAdminFirestore = {
                             ref: createDocRef(colName, id),
                             data: () => ({ ...data }),
                         });
-                        if (queryState.limitVal && matched.length >= queryState.limitVal) break;
                     }
+                }
+                if (queryState.isOrdered || queryState.startAfterId) {
+                    matched.sort((a, b) => a.id.localeCompare(b.id));
+                }
+                if (queryState.startAfterId) {
+                    const idx = matched.findIndex((d) => d.id === queryState.startAfterId);
+                    if (idx !== -1) {
+                        matched = matched.slice(idx + 1);
+                    }
+                }
+                if (queryState.limitVal) {
+                    matched = matched.slice(0, queryState.limitVal);
                 }
                 return { docs: matched, empty: matched.length === 0 };
             }),

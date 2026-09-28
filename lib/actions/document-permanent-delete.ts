@@ -1,6 +1,6 @@
 "use server";
 
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import {
     verifyIdToken,
     authorizeSpaceContributor,
@@ -129,13 +129,133 @@ export async function permanentlyDeleteDocumentAction(
     // 7. Perform S3 cleanup (leaves claim in place on failure)
     await permanentDeleteImages(idToken, spaceId, docId, imageUrls || []);
 
-    // 8. Atomically delete content and metadata with Admin batch (leaves claim in place on failure)
-    const batch = db.batch();
+    // 8. Discover matching targets in bounded pages using reverse backlink query
+    const PAGE_SIZE = 100;
+    const MAX_BATCH_SIZE = 450;
+    const pendingTargets: string[] = [];
+    let lastDoc: QueryDocumentSnapshot | undefined = undefined;
+
+    while (true) {
+        let pageQuery = db
+            .collection("documents")
+            .where("backlinks", "array-contains", docId);
+
+        if (typeof pageQuery.orderBy !== "function" || typeof pageQuery.limit !== "function") {
+            throw new Error("Firestore query pagination is unavailable");
+        }
+
+        pageQuery = pageQuery.orderBy("__name__").limit(PAGE_SIZE);
+
+        if (lastDoc) {
+            if (typeof pageQuery.startAfter !== "function") {
+                throw new Error("Firestore query pagination cursor is unavailable");
+            }
+            pageQuery = pageQuery.startAfter(lastDoc);
+        }
+
+        const pageSnap = await pageQuery.get();
+        if (pageSnap.empty) {
+            break;
+        }
+
+        for (const snap of pageSnap.docs) {
+            if (snap.id === docId) {
+                continue;
+            }
+            const data = typeof snap.data === "function"
+                ? (snap.data() as Record<string, unknown> | undefined)
+                : (snap as unknown as { data?: Record<string, unknown> }).data;
+
+            // Never mutate a cross-Space document (Requirement 2)
+            if (!data || data.spaceId !== spaceId) {
+                continue;
+            }
+
+            const backlinks = Array.isArray(data.backlinks) ? data.backlinks : [];
+            if (backlinks.includes(docId)) {
+                pendingTargets.push(snap.id);
+            }
+        }
+
+        // Commit intermediate batches while keeping at most MAX_BATCH_SIZE targets in pendingTargets
+        while (pendingTargets.length > MAX_BATCH_SIZE) {
+            const chunk = pendingTargets.splice(0, MAX_BATCH_SIZE);
+            const batch = db.batch();
+            for (const targetId of chunk) {
+                const targetRef = db.collection("documents").doc(targetId);
+                batch.update(targetRef, {
+                    backlinks: FieldValue.arrayRemove(docId),
+                });
+            }
+            await batch.commit();
+        }
+
+        lastDoc = pageSnap.docs[pageSnap.docs.length - 1];
+        if (pageSnap.docs.length < PAGE_SIZE) {
+            break;
+        }
+    }
+
     const contentRef = db.collection("documents").doc(docId).collection("content").doc("main");
     const docRef = db.collection("documents").doc(docId);
-    batch.delete(contentRef);
-    batch.delete(docRef);
-    await batch.commit();
+
+    const pendingFinalTargetSet = new Set(pendingTargets);
+
+    // Complete verification pass across all matching documents in bounded pages
+    let verifyLastDoc: QueryDocumentSnapshot | undefined = undefined;
+    while (true) {
+        let verifyQuery = db
+            .collection("documents")
+            .where("backlinks", "array-contains", docId);
+
+        if (typeof verifyQuery.orderBy !== "function" || typeof verifyQuery.limit !== "function") {
+            throw new Error("Firestore query pagination is unavailable");
+        }
+
+        verifyQuery = verifyQuery.orderBy("__name__").limit(PAGE_SIZE);
+
+        if (verifyLastDoc) {
+            if (typeof verifyQuery.startAfter !== "function") {
+                throw new Error("Firestore query pagination cursor is unavailable");
+            }
+            verifyQuery = verifyQuery.startAfter(verifyLastDoc);
+        }
+
+        const verifySnap = await verifyQuery.get();
+        if (verifySnap.empty) {
+            break;
+        }
+
+        for (const snap of verifySnap.docs) {
+            if (snap.id === docId) {
+                continue;
+            }
+            const data = typeof snap.data === "function"
+                ? (snap.data() as Record<string, unknown> | undefined)
+                : (snap as unknown as { data?: Record<string, unknown> }).data;
+
+            if (data && data.spaceId === spaceId && !pendingFinalTargetSet.has(snap.id)) {
+                throw new Error("Uncleared same-Space target backlinks remain");
+            }
+        }
+
+        verifyLastDoc = verifySnap.docs[verifySnap.docs.length - 1];
+        if (verifySnap.docs.length < PAGE_SIZE) {
+            break;
+        }
+    }
+
+    // Final batch: atomically removes the last target references and deletes source content and metadata
+    const finalBatch = db.batch();
+    for (const targetId of pendingTargets) {
+        const targetRef = db.collection("documents").doc(targetId);
+        finalBatch.update(targetRef, {
+            backlinks: FieldValue.arrayRemove(docId),
+        });
+    }
+    finalBatch.delete(contentRef);
+    finalBatch.delete(docRef);
+    await finalBatch.commit();
 
     // 9. Return success
     return { success: true };
