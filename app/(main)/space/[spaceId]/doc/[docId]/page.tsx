@@ -18,7 +18,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { SidebarNode } from "@/lib/types";
+import { getVisibleBacklinks } from "@/lib/backlinks";
 import {
   cn,
   extractImageUrls,
@@ -47,21 +47,14 @@ function BacklinksList({
   docIds: string[];
   spaceId: string;
 }) {
-  const { data: tree } = useQuery({
+  const { data: tree, isError } = useQuery({
     queryKey: ["sidebar-tree", spaceId],
     queryFn: () => getSidebarTree(spaceId),
   });
 
-  const findTitle = (id: string, nodes: SidebarNode[]): string | null => {
-    for (const node of nodes) {
-      if (node.id === id) return node.title;
-      if (node.children) {
-        const found = findTitle(id, node.children);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
+  if (isError) {
+    return " None";
+  }
 
   if (!tree)
     return (
@@ -70,20 +63,23 @@ function BacklinksList({
       </div>
     );
 
+  const visibleLinks = getVisibleBacklinks(docIds, tree);
+
+  if (visibleLinks.length === 0) {
+    return " None";
+  }
+
   return (
     <div className="mt-1 flex flex-wrap gap-2">
-      {docIds.map((id) => {
-        const title = findTitle(id, tree) || "Unknown Doc";
-        return (
-          <Link
-            key={id}
-            href={`/space/${spaceId}/doc/${id}`}
-            className="bg-secondary px-2 py-1 rounded text-xs hover:bg-secondary/80 text-secondary-foreground transition-colors cursor-pointer"
-          >
-            {title}
-          </Link>
-        );
-      })}
+      {visibleLinks.map((link) => (
+        <Link
+          key={link.id}
+          href={`/space/${spaceId}/doc/${link.id}`}
+          className="bg-secondary px-2 py-1 rounded text-xs hover:bg-secondary/80 text-secondary-foreground transition-colors cursor-pointer"
+        >
+          {link.title}
+        </Link>
+      ))}
     </div>
   );
 }
