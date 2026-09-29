@@ -256,7 +256,7 @@ function serializeInline(nodes: TiptapNode[]): string {
   if (!nodes || nodes.length === 0) return "";
 
   let result = "";
-  let activeMarks: TiptapMark[] = [];
+  const activeMarks: TiptapMark[] = [];
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
@@ -410,7 +410,7 @@ function serializeInline(nodes: TiptapNode[]): string {
 
     if (trailingSpace) {
       const nextNode = i + 1 < nodes.length ? nodes[i + 1] : null;
-      let nextTargetMarks: TiptapMark[] = [];
+      const nextTargetMarks: TiptapMark[] = [];
       if (nextNode && nextNode.type === "text") {
         const nextNodeMarks = (nextNode.marks || []).filter((m) => MARK_ORDER[m.type] !== undefined);
         let idx = 0;

@@ -1,5 +1,5 @@
 
-import { Extension } from '@tiptap/core';
+import { Extension, type Editor, type Range } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
 import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import { ReactRenderer } from '@tiptap/react';
@@ -134,6 +134,17 @@ export function createLinkSuggestionRenderer() {
   };
 }
 
+interface LinkSuggestionItem {
+  id: string;
+  title: string;
+}
+
+interface CommandProps {
+  editor: Editor;
+  range: Range;
+  props: LinkSuggestionItem;
+}
+
 export const LinkSuggestion = Extension.create({
   name: 'linkSuggestion',
 
@@ -142,10 +153,10 @@ export const LinkSuggestion = Extension.create({
       suggestion: {
         char: '[',
         pluginKey: new PluginKey('linkSuggestion'),
-        command: ({ editor, range, props }: any) => {
+        command: ({ editor, range, props }: CommandProps) => {
           // Find the extension instance to access its options
-          const ext = editor.extensionManager.extensions.find((e: any) => e.name === 'linkSuggestion');
-          const spaceId = ext?.options?.spaceId || 'unknown';
+          const ext = editor.extensionManager.extensions.find((e) => e.name === 'linkSuggestion');
+          const spaceId = (ext?.options as { spaceId?: string } | undefined)?.spaceId || 'unknown';
 
           // props has the item selected
           // We want to insert a link with the title
