@@ -4,7 +4,7 @@ Docula is a place to write and organize documentation with other people. Put rel
 
 I started Docula with an idea somewhere between a team wiki and a connected notebook. The application that emerged is more specific: a small collaborative documentation tool with clear ownership, editable membership, recoverable deletion, and a few useful ways to take your writing elsewhere. It is still a work in progress, and that is part of its story.
 
-> **Status:** Docula is preparing its first public release. Running your own instance requires Firebase and an AWS S3 bucket. The repository is currently a prerelease.
+> **Status:** Docula is an early public release. Running your own instance requires Firebase and an AWS S3 bucket.
 
 ## Take a short tour
 
