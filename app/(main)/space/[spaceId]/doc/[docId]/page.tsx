@@ -8,7 +8,7 @@ import {
 } from "@/lib/actions/document";
 import { getSpace, joinSpace } from "@/lib/actions/spaces";
 import { acquireLock, releaseLock } from "@/lib/actions/locking";
-import { permanentizeImages, deleteImages } from "@/lib/actions/s3";
+import { permanentizeImages, deleteImages, cleanupRemovedDocumentImages } from "@/lib/actions/s3";
 import { useHeartbeat } from "@/hooks/use-heartbeat";
 import { useParams, useSearchParams, useRouter, notFound } from "next/navigation";
 import { Editor } from "@/components/editor";
@@ -18,7 +18,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { SidebarNode } from "@/lib/types";
+import { getVisibleBacklinks } from "@/lib/backlinks";
 import {
   cn,
   extractImageUrls,
@@ -38,6 +38,7 @@ import { jsonToMarkdown } from "@/lib/markdown-converter";
 import { jsonToDocx } from "@/lib/docx-converter";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
 import { resolveJoinSpaceError } from "@/lib/member-management";
+import { handleDropdownDialogHandoff } from "@/lib/dialog-focus";
 
 function BacklinksList({
   docIds,
@@ -46,21 +47,14 @@ function BacklinksList({
   docIds: string[];
   spaceId: string;
 }) {
-  const { data: tree } = useQuery({
+  const { data: tree, isError } = useQuery({
     queryKey: ["sidebar-tree", spaceId],
     queryFn: () => getSidebarTree(spaceId),
   });
 
-  const findTitle = (id: string, nodes: SidebarNode[]): string | null => {
-    for (const node of nodes) {
-      if (node.id === id) return node.title;
-      if (node.children) {
-        const found = findTitle(id, node.children);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
+  if (isError) {
+    return " None";
+  }
 
   if (!tree)
     return (
@@ -69,20 +63,23 @@ function BacklinksList({
       </div>
     );
 
+  const visibleLinks = getVisibleBacklinks(docIds, tree);
+
+  if (visibleLinks.length === 0) {
+    return " None";
+  }
+
   return (
     <div className="mt-1 flex flex-wrap gap-2">
-      {docIds.map((id) => {
-        const title = findTitle(id, tree) || "Unknown Doc";
-        return (
-          <Link
-            key={id}
-            href={`/space/${spaceId}/doc/${id}`}
-            className="bg-secondary px-2 py-1 rounded text-xs hover:bg-secondary/80 text-secondary-foreground transition-colors cursor-pointer"
-          >
-            {title}
-          </Link>
-        );
-      })}
+      {visibleLinks.map((link) => (
+        <Link
+          key={link.id}
+          href={`/space/${spaceId}/doc/${link.id}`}
+          className="bg-secondary px-2 py-1 rounded text-xs hover:bg-secondary/80 text-secondary-foreground transition-colors cursor-pointer"
+        >
+          {link.title}
+        </Link>
+      ))}
     </div>
   );
 }
@@ -124,14 +121,42 @@ export default function DocPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMoveDialogOpen, setIsMoveDialogOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const pendingDialogActionRef = useRef<"move" | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [content, setContent] = useState<any>(null);
   const [title, setTitle] = useState("");
   const [sessionImages, setSessionImages] = useState<string[]>([]);
+  const [baseRevision, setBaseRevision] = useState<number | null>(null);
 
   const isEditingRef = useRef(false);
   const sessionImagesRef = useRef<string[]>([]);
+  const [isRetryingCleanup, setIsRetryingCleanup] = useState(false);
+
+  const handleRetryCleanup = async () => {
+    if (!doc || isRetryingCleanup) return;
+    setIsRetryingCleanup(true);
+    try {
+      const idToken = await user?.getIdToken();
+      await cleanupRemovedDocumentImages(idToken, spaceId, id);
+      queryClient.invalidateQueries({ queryKey: ["doc", id] });
+      toast({
+        title: "Cleanup complete",
+        description: "Storage cleanup for removed images completed successfully.",
+      });
+    } catch (e) {
+      toast({
+        title: "Cleanup failed",
+        description: e instanceof Error ? e.message : "Storage cleanup failed. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRetryingCleanup(false);
+    }
+  };
 
   const { data: space } = useQuery({
     queryKey: ["space", spaceId],
@@ -179,6 +204,7 @@ export default function DocPage() {
         setTitle(doc.title);
         setSessionImages([]);
         sessionImagesRef.current = [];
+        setBaseRevision(doc.revision ?? 0);
       }
     }
   }, [doc, isEditing]);
@@ -215,11 +241,15 @@ export default function DocPage() {
         if (user?.uid) releaseLock(id, user.uid);
         // Delete temp images if navigated away without saving
         if (sessionImagesRef.current.length > 0) {
-          deleteImages(sessionImagesRef.current);
+          import("@/lib/firebase").then(({ auth }) => {
+            auth.currentUser?.getIdToken().then(token => {
+                deleteImages(token, spaceId, id, sessionImagesRef.current);
+            });
+          });
         }
       }
     };
-  }, [id, user?.uid]);
+  }, [id, user?.uid, spaceId]);
 
   const handleEdit = async () => {
     if (!user) return;
@@ -246,6 +276,7 @@ export default function DocPage() {
       if (freshDoc) {
         setContent(freshDoc.content);
         setTitle(freshDoc.title);
+        setBaseRevision(freshDoc.revision ?? 0);
       }
       
       setIsEditing(true);
@@ -295,6 +326,7 @@ export default function DocPage() {
 
   const handleCancel = async () => {
     setIsEditing(false);
+    setBaseRevision(null);
     if (doc) {
       setContent(doc.content);
       setTitle(doc.title);
@@ -302,7 +334,9 @@ export default function DocPage() {
 
     // Delete temp images uploaded during this session
     if (sessionImages.length > 0) {
-      await deleteImages(sessionImages);
+      const { auth } = await import("@/lib/firebase");
+      const idToken = await auth.currentUser?.getIdToken();
+      await deleteImages(idToken, spaceId, id, sessionImages);
       setSessionImages([]);
     }
 
@@ -322,7 +356,8 @@ export default function DocPage() {
         blob = new Blob([contentStr], { type: "text/markdown" });
         extension = "md";
       } else if (format === "docx") {
-        blob = await jsonToDocx(doc.content);
+        const idToken = await user?.getIdToken();
+        blob = await jsonToDocx(doc.content, spaceId, id, idToken);
         extension = "docx";
       }
 
@@ -377,37 +412,54 @@ export default function DocPage() {
       });
 
       // 4. Move images from temp to uploads
-      if (imagesToPermanentize.length > 0) {
-        // permanentizeImages returns { "unsignedTempUrl": "unsignedUploadsUrl" }
-        const mapping = await permanentizeImages(imagesToPermanentize);
+      if (imagesToPermanentize.length > 0 || imagesToDelete.length > 0) {
+        const { auth } = await import("@/lib/firebase");
+        const idToken = await auth.currentUser?.getIdToken();
 
-        // 5. Update content with new URLs
-        // Since finalContent has Unsigned URLs, and mapping keys are Unsigned URLs, this works.
-        finalContent = replaceImageUrls(finalContent, mapping);
+        if (imagesToPermanentize.length > 0) {
+          const mapping = await permanentizeImages(idToken, spaceId, id, imagesToPermanentize);
+          finalContent = replaceImageUrls(finalContent, mapping);
+          setContent(finalContent);
+        }
+
+        if (imagesToDelete.length > 0) {
+          await deleteImages(idToken, spaceId, id, imagesToDelete);
+        }
       }
 
-      // 6. Delete images that were uploaded but then removed from editor before saving
-      if (imagesToDelete.length > 0) {
-        await deleteImages(imagesToDelete);
-      }
-
-      await updateDocument(id, {
+      const result = await updateDocument(id, {
         title,
         content: finalContent,
+        baseRevision: baseRevision !== null ? baseRevision : (doc?.revision ?? 0),
       });
 
       setSessionImages([]);
       if (user) await releaseLock(id, user.uid);
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setIsEditing(false);
+      setBaseRevision(null);
       queryClient.invalidateQueries({ queryKey: ["doc", id] });
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
+      if (result?.cleanupPending) {
+        toast({
+          title: "Content saved",
+          description: "Document saved, but storage cleanup for removed images is pending. You can retry cleanup anytime.",
+        });
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to save document",
+        description: error instanceof Error ? error.message : "Your changes could not be saved. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
   if (isLoading) return <DocSkeleton />;
-  if (!doc || !space || space.deletedAt) {
+  if (!doc || !space || space.deletedAt || doc.deleted || doc.deletedAt != null) {
     notFound();
   }
 
@@ -424,6 +476,25 @@ export default function DocPage() {
       />
       <div className="mx-auto max-w-4xl px-4 md:px-8">
         <Breadcrumbs spaceId={spaceId} documentId={doc.id} title={doc.title} />
+
+        {isContributor && doc.pendingImageCleanup && doc.pendingImageCleanup.length > 0 && (
+          <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 p-3 border border-amber-200 dark:border-amber-900/30 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+              <Info className="h-4 w-4 shrink-0" />
+              <span>Storage cleanup for removed images is pending.</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isRetryingCleanup}
+              onClick={handleRetryCleanup}
+              className="text-xs h-7 cursor-pointer"
+            >
+              {isRetryingCleanup ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Retry Cleanup
+            </Button>
+          </div>
+        )}
 
         {!isContributor && (
           <div className="mb-4 rounded-md bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-900/30">
@@ -558,9 +629,10 @@ export default function DocPage() {
               </>
             ) : (
               <div className="flex gap-2">
-                <DropdownMenu>
+                <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
                   <DropdownMenuTrigger asChild>
                     <button 
+                      ref={menuTriggerRef}
                       type="button"
                       className="flex items-center justify-center h-7 w-7 rounded border border-border text-foreground hover:bg-accent hover:text-accent-foreground text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       title="Document actions"
@@ -569,10 +641,33 @@ export default function DocPage() {
                       <MoreHorizontal className="h-4 w-4" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-60">
+                  <DropdownMenuContent
+                    align="end"
+                    className="min-w-60"
+                    onCloseAutoFocus={(e) => {
+                      const pendingAction = pendingDialogActionRef.current;
+                      if (pendingAction) {
+                        pendingDialogActionRef.current = null;
+                        handleDropdownDialogHandoff({
+                          pendingAction,
+                          trigger: menuTriggerRef.current,
+                          event: e,
+                          onOpenDialog: (action) => {
+                            if (action === "move") {
+                              setIsMoveDialogOpen(true);
+                            }
+                          },
+                          returnFocusRef,
+                        });
+                      }
+                    }}
+                  >
                     {isContributor && (
                       <DropdownMenuItem
-                        onSelect={() => setIsMoveDialogOpen(true)}
+                        onSelect={(e) => {
+                          e.stopPropagation();
+                          pendingDialogActionRef.current = "move";
+                        }}
                         className="cursor-pointer"
                       >
                         <FolderOutput className="h-4 w-4 mr-2" />
@@ -652,6 +747,7 @@ export default function DocPage() {
           onChange={setContent}
           onImageUpload={(url) => setSessionImages((prev) => [...prev, url])}
           spaceId={spaceId}
+          docId={id}
           isScrolled={isScrolled}
         />
       </div>
@@ -684,6 +780,7 @@ export default function DocPage() {
         documentId={id}
         currentParentId={doc?.parentId || null}
         documentTitle={doc?.title}
+        returnFocusRef={returnFocusRef}
       />
     </div>
   );

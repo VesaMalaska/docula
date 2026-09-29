@@ -2,14 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback, createContext, useContext, MouseEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSidebarTree, createDocument, deleteDocument } from "@/lib/actions/document";
-import { AlertDialog } from "@/components/ui/alert-dialog";
+import { getSidebarTree, createDocument } from "@/lib/actions/document";
+import { DeleteDocumentDialog } from "@/components/delete-document-dialog";
 import { SidebarNode } from "@/lib/types";
 import { ChevronRight, ChevronDown, FileText, Plus, Trash2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/components/providers/auth-provider";
 import { useExpandedNodes } from "@/hooks/use-expanded-nodes";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { MoveDocumentDialog } from "@/components/move-document-dialog";
@@ -55,7 +54,6 @@ export function SidebarTree({ spaceId, spaceControlRef }: SidebarTreeProps) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useAuth();
 
   const triggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -77,23 +75,6 @@ export function SidebarTree({ spaceId, spaceControlRef }: SidebarTreeProps) {
     action: "move" | "import" | "delete";
     node: SidebarNode;
   } | null>(null);
-
-  const { mutate: deleteDoc, isPending: isDeleting } = useMutation({
-    mutationFn: async (node: SidebarNode) => {
-      if (!user) return;
-      return deleteDocument(node.id, user.uid);
-    },
-    onSuccess: (_, deletedNode) => {
-      queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
-      setActiveDialog(null);
-      if (pathname === `/space/${spaceId}/doc/${deletedNode.id}`) {
-        router.push(`/space/${spaceId}`);
-      }
-    },
-    onError: () => {
-      // cancelled or error
-    },
-  });
 
   const handleOpenDialog = useCallback(
     (action: "move" | "import" | "delete", node: SidebarNode) => {
@@ -233,16 +214,21 @@ export function SidebarTree({ spaceId, spaceControlRef }: SidebarTreeProps) {
       </div>
 
       {activeDialog?.action === "delete" && (
-        <AlertDialog
+        <DeleteDocumentDialog
           isOpen={activeDialog.action === "delete"}
           onClose={() => setActiveDialog(null)}
-          title="Delete Document"
-          description="Are you sure you want to delete this document? This action cannot be undone."
-          onAction={() => activeDialog && deleteDoc(activeDialog.node)}
-          variant="destructive"
-          actionLabel={isDeleting ? "Deleting..." : "Delete"}
+          spaceId={spaceId}
+          node={activeDialog.node}
           returnFocusRef={returnFocusRef}
           actionReturnFocusRef={actionReturnFocusRef}
+          onSuccess={() => {
+            const deletedNode = activeDialog.node;
+            queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
+            setActiveDialog(null);
+            if (pathname === `/space/${spaceId}/doc/${deletedNode.id}`) {
+              router.push(`/space/${spaceId}`);
+            }
+          }}
         />
       )}
 

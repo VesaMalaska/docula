@@ -4,9 +4,13 @@ import {
   calculateNewPath,
   calculateDescendantPath,
   calculateSubtreeHeightFromPaths,
+  calculateDeletedDocumentSubtreeHeight,
   getNodeDepth,
   getSubtreeHeight,
   validateMoveDestination,
+  validateRestorationDestination,
+  isDepthAllowed,
+  MAX_DOCUMENT_DEPTH,
   getVisibleTreeItems,
   findNextVisibleId,
   findPreviousVisibleId,
@@ -340,6 +344,159 @@ describe('Document Hierarchy & Four-Level Depth Validation', () => {
       const resultInvalid = validateMoveDestination(sampleTree, 'doc-2-1', 'doc-2', 'doc-2');
       assert.equal(resultInvalid.valid, false);
       assert.equal(resultInvalid.reason, 'current_parent');
+    });
+  });
+
+  describe('restoration destination validation & depth rules', () => {
+    // Exact QA reproduction active tree:
+    // jukukekkuli (depth 1)
+    // └── raikuli (depth 2)
+    //     └── kuikkeli (depth 3)
+    const qaActiveTree: SidebarNode[] = [
+      {
+        id: 'jukukekkuli',
+        title: 'jukukekkuli',
+        parentId: null,
+        children: [
+          {
+            id: 'raikuli',
+            title: 'raikuli',
+            parentId: 'jukukekkuli',
+            children: [
+              {
+                id: 'kuikkeli',
+                title: 'kuikkeli',
+                parentId: 'raikuli',
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    describe('Three-level Trash subtree (A -> B -> C)', () => {
+      const trashDocs = [
+        { id: 'doc-A', deletionGroupId: 'grp-abc', path: [] },
+        { id: 'doc-B', deletionGroupId: 'grp-abc', path: ['doc-A'] },
+        { id: 'doc-C', deletionGroupId: 'grp-abc', path: ['doc-A', 'doc-B'] },
+      ];
+
+      test('subtree height is 3: max relative path length + 1', () => {
+        const height = calculateDeletedDocumentSubtreeHeight('doc-A', trashDocs);
+        assert.equal(height, 3);
+      });
+
+      test('Space root is valid (depth 0 + height 3 = 3 <= 4)', () => {
+        const result = validateRestorationDestination(qaActiveTree, null, 3);
+        assert.deepEqual(result, { valid: true });
+      });
+
+      test('root-level document is valid only if resulting deepest depth is at most 4 (depth 1 + height 3 = 4 <= 4)', () => {
+        const result = validateRestorationDestination(qaActiveTree, 'jukukekkuli', 3);
+        assert.deepEqual(result, { valid: true });
+      });
+
+      test('destination at depth two is rejected when 2 + 3 > 4 (raikuli)', () => {
+        const result = validateRestorationDestination(qaActiveTree, 'raikuli', 3);
+        assert.equal(result.valid, false);
+        assert.equal(result.reason, 'max_depth');
+        assert.equal(result.description, 'Restoring here would exceed the maximum depth of 4 levels');
+      });
+
+      test('kuikkeli at depth three is rejected when 3 + 3 > 4', () => {
+        const result = validateRestorationDestination(qaActiveTree, 'kuikkeli', 3);
+        assert.equal(result.valid, false);
+        assert.equal(result.reason, 'max_depth');
+        assert.equal(result.description, 'Restoring here would exceed the maximum depth of 4 levels');
+      });
+    });
+
+    describe('One-level deleted document (single deleted doc)', () => {
+      const singleTrashDoc = [{ id: 'single-doc', path: [] }];
+
+      test('subtree height is 1', () => {
+        const height = calculateDeletedDocumentSubtreeHeight('single-doc', singleTrashDoc);
+        assert.equal(height, 1);
+      });
+
+      test('Space root is valid (0 + 1 = 1 <= 4)', () => {
+        const result = validateRestorationDestination(sampleTree, null, 1);
+        assert.deepEqual(result, { valid: true });
+      });
+
+      test('destinations at depths one, two and three are valid', () => {
+        // Depth 1 (doc-1): 1 + 1 = 2 <= 4
+        assert.deepEqual(validateRestorationDestination(sampleTree, 'doc-1', 1), { valid: true });
+        // Depth 2 (doc-1-1): 2 + 1 = 3 <= 4
+        assert.deepEqual(validateRestorationDestination(sampleTree, 'doc-1-1', 1), { valid: true });
+        // Depth 3 (doc-1-1-1): 3 + 1 = 4 <= 4
+        assert.deepEqual(validateRestorationDestination(sampleTree, 'doc-1-1-1', 1), { valid: true });
+      });
+
+      test('destination at depth four is rejected (4 + 1 = 5 > 4)', () => {
+        // Depth 4 (doc-1-1-1-1): 4 + 1 = 5 > 4
+        const result = validateRestorationDestination(sampleTree, 'doc-1-1-1-1', 1);
+        assert.equal(result.valid, false);
+        assert.equal(result.reason, 'max_depth');
+      });
+    });
+
+    describe('Two-level deleted subtree (A -> B)', () => {
+      const twoLevelTrash = [
+        { id: 'doc-A', deletionGroupId: 'grp-ab', path: [] },
+        { id: 'doc-B', deletionGroupId: 'grp-ab', path: ['doc-A'] },
+      ];
+
+      test('subtree height is 2', () => {
+        const height = calculateDeletedDocumentSubtreeHeight('doc-A', twoLevelTrash);
+        assert.equal(height, 2);
+      });
+
+      test('destination depth one is valid (1 + 2 = 3 <= 4)', () => {
+        const result = validateRestorationDestination(sampleTree, 'doc-1', 2);
+        assert.deepEqual(result, { valid: true });
+      });
+
+      test('destination depth two is valid (2 + 2 = 4 <= 4)', () => {
+        const result = validateRestorationDestination(sampleTree, 'doc-1-1', 2);
+        assert.deepEqual(result, { valid: true });
+      });
+
+      test('destination depth three is rejected (3 + 2 = 5 > 4)', () => {
+        const result = validateRestorationDestination(sampleTree, 'doc-1-1-1', 2);
+        assert.equal(result.valid, false);
+        assert.equal(result.reason, 'max_depth');
+      });
+    });
+
+    describe('Shared depth formula and validateMoveDestination options', () => {
+      test('MAX_DOCUMENT_DEPTH is 4 and isDepthAllowed enforces D + H <= 4', () => {
+        assert.equal(MAX_DOCUMENT_DEPTH, 4);
+        assert.equal(isDepthAllowed(0, 4), true);
+        assert.equal(isDepthAllowed(1, 3), true);
+        assert.equal(isDepthAllowed(2, 2), true);
+        assert.equal(isDepthAllowed(3, 1), true);
+        assert.equal(isDepthAllowed(2, 3), false);
+        assert.equal(isDepthAllowed(3, 2), false);
+        assert.equal(isDepthAllowed(4, 1), false);
+      });
+
+      test('validateMoveDestination with isRestoration: true does not require movedDoc to exist in tree', () => {
+        // 'doc-deleted' is not in qaActiveTree
+        const resultValid = validateMoveDestination(qaActiveTree, 'doc-deleted', 'jukukekkuli', null, {
+          isRestoration: true,
+          subtreeHeight: 3,
+        });
+        assert.deepEqual(resultValid, { valid: true });
+
+        const resultInvalid = validateMoveDestination(qaActiveTree, 'doc-deleted', 'kuikkeli', null, {
+          isRestoration: true,
+          subtreeHeight: 3,
+        });
+        assert.equal(resultInvalid.valid, false);
+        assert.equal(resultInvalid.reason, 'max_depth');
+      });
     });
   });
 

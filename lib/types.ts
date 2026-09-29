@@ -11,6 +11,7 @@ export interface Document {
   tags: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  revision?: number | null;
   lock: {
     active: boolean;
     userId: string;
@@ -22,7 +23,46 @@ export interface Document {
   deleted?: boolean;
   deletedAt?: Timestamp | null;
   deletedBy?: string | null;
+  restoreParentId?: string | null;
+  permanentDeletionClaim?: PermanentDeletionClaim | null;
+  lifecycleClaim?: LifecycleClaim | null;
+  deletionGroupId?: string | null;
+  deletionGroupRootId?: string | null;
+  deletionGroupCount?: number | null;
+  pendingImageCleanup?: string[] | null;
+  imageCleanupClaim?: ImageCleanupClaim | null;
+  retiredImageKeys?: string[] | null;
 }
+
+export interface ImageCleanupClaim {
+  claimId: string;
+  keys: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  claimedAt: any;
+}
+
+export interface PermanentDeletionClaim {
+  claimedAt: Timestamp;
+  claimedBy: string;
+}
+
+export interface LifecycleClaim {
+  claimedAt: Timestamp;
+  claimedBy: string;
+  operation: "soft-delete" | "restore";
+  strategy?: "move-descendants" | "delete-subtree";
+  opId: string;
+}
+
+export interface SoftDeleteOptions {
+  strategy: "move-descendants" | "delete-subtree";
+  destinationParentId?: string | null;
+}
+
+export type RestoreDestination =
+  | { kind: "original" }
+  | { kind: "root" }
+  | { kind: "document"; parentId: string };
 
 
 export interface SidebarNode {
@@ -43,4 +83,6 @@ export interface Space {
   updatedAt: Timestamp;
   deletedAt?: Timestamp | null;
   deletedBy?: string | null;
+  purgeState?: "purging" | null;
+  purgeStartedAt?: Timestamp | null;
 }

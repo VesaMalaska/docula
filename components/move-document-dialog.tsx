@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/use-toast";
 import {
   SPACE_ROOT_ID,
   validateMoveDestination,
+  validateRestorationDestination,
+  type MoveDestinationValidationResult,
   findNodeInTree,
   getVisibleTreeItems,
   findNextVisibleId,
@@ -21,6 +23,10 @@ import {
   resolveVisibleActiveId,
   isDescendantOf,
 } from "@/lib/utils/hierarchy";
+import {
+  canSelectDestination,
+  isDestinationConfirmationEnabled,
+} from "@/lib/utils/trash-restore";
 
 function getDisabledBadgeText(reason?: string): string | null {
   switch (reason) {
@@ -48,6 +54,11 @@ interface MoveDocumentDialogProps {
   returnFocusRef?: React.MutableRefObject<HTMLElement | null>;
   containerRef?: React.RefObject<HTMLElement | null>;
   onSuccess?: (destinationParentId: string | null) => void;
+  customAction?: (destinationParentId: string | null) => Promise<void>;
+  customTitle?: string;
+  customDescription?: string;
+  submitLabel?: string;
+  subtreeHeight?: number;
 }
 
 export function MoveDocumentDialog({
@@ -60,6 +71,11 @@ export function MoveDocumentDialog({
   returnFocusRef,
   containerRef,
   onSuccess,
+  customAction,
+  customTitle,
+  customDescription,
+  submitLabel,
+  subtreeHeight,
 }: MoveDocumentDialogProps) {
   const { data: tree, isLoading } = useQuery({
     queryKey: ["sidebar-tree", spaceId],
@@ -145,18 +161,19 @@ export function MoveDocumentDialog({
   );
 
   const handleCloseAutoFocus = (event: Event) => {
-    if (isMoveSuccessfulRef.current) {
+    if (isMoveSuccessfulRef.current && containerRef?.current) {
       isMoveSuccessfulRef.current = false;
       if (returnFocusRef) {
         returnFocusRef.current = null;
       }
       event.preventDefault();
-      const interimTarget = containerRef?.current;
-      if (interimTarget && interimTarget.isConnected) {
+      const interimTarget = containerRef.current;
+      if (interimTarget.isConnected) {
         interimTarget.focus({ preventScroll: true });
       }
       return;
     }
+    isMoveSuccessfulRef.current = false;
 
     const target = returnFocusRef?.current;
     const isPointer = isPointerInteractionRef.current;
@@ -306,13 +323,8 @@ export function MoveDocumentDialog({
         e.stopPropagation();
         const currentItem = visibleItems.find((i) => i.id === activeId);
         if (currentItem) {
-          const validity = validateMoveDestination(
-            tree || [],
-            documentId,
-            currentItem.destinationParentId,
-            currentParentId
-          );
-          if (validity.valid) {
+          const validity = getDestinationValidity(currentItem.destinationParentId);
+          if (canSelectDestination(validity)) {
             setSelectedParentId(currentItem.destinationParentId);
           }
         }
@@ -324,46 +336,73 @@ export function MoveDocumentDialog({
   const { mutate: handleMove, isPending } = useMutation({
     mutationFn: async () => {
       if (selectedParentId === undefined) return;
-      await moveDocument(documentId, selectedParentId);
+      if (customAction) {
+        await customAction(selectedParentId);
+      } else {
+        await moveDocument(documentId, selectedParentId);
+      }
     },
     onSuccess: () => {
       isMoveSuccessfulRef.current = true;
-      if (returnFocusRef) {
+      if (containerRef && returnFocusRef) {
         returnFocusRef.current = null;
       }
       toast({ title: "Document moved successfully" });
       queryClient.invalidateQueries({ queryKey: ["sidebar-tree", spaceId] });
       queryClient.invalidateQueries({ queryKey: ["doc", documentId] });
-      onSuccess?.(selectedParentId ?? null);
+      if (selectedParentId !== undefined) {
+        onSuccess?.(selectedParentId);
+      }
       onClose();
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to move document", description: err.message, variant: "destructive" });
+      const rawMessage = err?.message || "";
+      const isKnownSafe =
+        rawMessage.includes("maximum hierarchy depth") ||
+        rawMessage.includes("Destination") ||
+        rawMessage.includes("locked by another") ||
+        rawMessage.includes("Cannot move") ||
+        rawMessage.includes("not found") ||
+        rawMessage.includes("Permission denied") ||
+        rawMessage.includes("Authentication required") ||
+        rawMessage.includes("exceeds safe atomic limit") ||
+        rawMessage.includes("pending permanent deletion");
+      const description = isKnownSafe ? rawMessage : "Failed to move document. Please try again.";
+      toast({ title: "Failed to move document", description, variant: "destructive" });
     }
   });
 
-  const spaceRootValidity = validateMoveDestination(
-    tree || [],
-    documentId,
-    null,
-    currentParentId
-  );
+  const getDestinationValidity = (destParentId: string | null): MoveDestinationValidationResult => {
+    if (customAction) {
+      if (destParentId === documentId) {
+        return {
+          valid: false,
+          reason: "self",
+          description: "Cannot restore a document under itself",
+        };
+      }
+      return validateRestorationDestination(tree || [], destParentId, subtreeHeight ?? 1);
+    }
+    return validateMoveDestination(
+      tree || [],
+      documentId,
+      destParentId,
+      currentParentId
+    );
+  };
+
+  const spaceRootValidity = getDestinationValidity(null);
   const isSpaceRootDisabled = !spaceRootValidity.valid;
   const isSpaceRootSelected = selectedParentId === null;
 
   const selectedValidity =
     selectedParentId !== undefined
-      ? validateMoveDestination(tree || [], documentId, selectedParentId, currentParentId)
+      ? getDestinationValidity(selectedParentId)
       : { valid: false };
 
   const renderTree = (nodes: SidebarNode[], level: number) => {
     return nodes.map((node) => {
-      const validity = validateMoveDestination(
-        tree || [],
-        documentId,
-        node.id,
-        currentParentId
-      );
+      const validity = getDestinationValidity(node.id);
       const isDisabled = !validity.valid;
       const isSelected = selectedParentId === node.id;
       const isOpen = expandedNodes.has(node.id);
@@ -395,7 +434,7 @@ export function MoveDocumentDialog({
             onClick={(e) => {
               e.stopPropagation();
               setActiveIdOverride(node.id);
-              if (!isDisabled) {
+              if (canSelectDestination(validity)) {
                 setSelectedParentId(node.id);
               }
             }}
@@ -417,12 +456,12 @@ export function MoveDocumentDialog({
             </span>
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate min-w-0" title={node.title}>{node.title}</span>
-            {node.id === currentParentId && (
+            {!customAction && node.id === currentParentId && (
               <span className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 max-w-[40%] truncate" title="(Current)">
                 (Current)
               </span>
             )}
-            {isDisabled && node.id !== currentParentId && badgeText && (
+            {isDisabled && (customAction || node.id !== currentParentId) && badgeText && (
               <span className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 max-w-[50%] truncate" title={`(${badgeText})`}>
                 ({badgeText})
               </span>
@@ -455,9 +494,9 @@ export function MoveDocumentDialog({
         }}
       >
         <DialogHeader className="min-w-0">
-          <DialogTitle>Move document</DialogTitle>
+          <DialogTitle>{customTitle || "Move document"}</DialogTitle>
           <DialogDescription className="min-w-0 [overflow-wrap:anywhere] break-words">
-            Select a new location{documentTitle ? ` for "${documentTitle}"` : " for this document"}.
+            {customDescription || `Select a new location${documentTitle ? ` for "${documentTitle}"` : " for this document"}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -491,19 +530,19 @@ export function MoveDocumentDialog({
                 onClick={(e) => {
                   e.stopPropagation();
                   setActiveIdOverride(SPACE_ROOT_ID);
-                  if (!isSpaceRootDisabled) {
+                  if (canSelectDestination(spaceRootValidity)) {
                     setSelectedParentId(null);
                   }
                 }}
               >
                 <Home className="h-4 w-4 text-muted-foreground ml-1 shrink-0" />
                 <span className="truncate min-w-0">Space root</span>
-                {currentParentId === null && (
+                {!customAction && currentParentId === null && (
                   <span className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 truncate" title="(Current)">
                     (Current)
                   </span>
                 )}
-                {isSpaceRootDisabled && currentParentId !== null && (
+                {isSpaceRootDisabled && (customAction || currentParentId !== null) && (
                   <span
                     className="text-xs text-muted-foreground ml-1.5 shrink min-w-0 max-w-[50%] truncate"
                     title={`(${getDisabledBadgeText(spaceRootValidity.reason)})`}
@@ -525,10 +564,10 @@ export function MoveDocumentDialog({
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button 
             onClick={() => handleMove()} 
-            disabled={isPending || selectedParentId === undefined || !selectedValidity.valid}
+            disabled={!isDestinationConfirmationEnabled(selectedParentId, selectedValidity, isPending)}
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Move
+            {submitLabel || "Move"}
           </Button>
         </DialogFooter>
       </DialogContent>

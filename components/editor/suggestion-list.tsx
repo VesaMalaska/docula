@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import React, { forwardRef, useImperativeHandle, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface SuggestionListProps {
@@ -8,6 +8,12 @@ interface SuggestionListProps {
 
 export const SuggestionList = forwardRef((props: SuggestionListProps, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [prevItems, setPrevItems] = useState(props.items)
+
+  if (prevItems !== props.items) {
+    setPrevItems(props.items)
+    setSelectedIndex(0)
+  }
 
   const selectItem = (index: number) => {
     const item = props.items[index]
@@ -27,10 +33,6 @@ export const SuggestionList = forwardRef((props: SuggestionListProps, ref) => {
   const enterHandler = () => {
     selectItem(selectedIndex)
   }
-
-  useEffect(() => {
-    setSelectedIndex(0)
-  }, [props.items])
 
   useImperativeHandle(ref, () => ({
     onKeyDown: ({ event }: { event: KeyboardEvent }) => {

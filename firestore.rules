@@ -15,7 +15,8 @@ service cloud.firestore {
     }
 
     function isSpaceActive(spaceData) {
-      return !('deletedAt' in spaceData) || spaceData.deletedAt == null;
+      return (!('deletedAt' in spaceData) || spaceData.deletedAt == null) &&
+        (!('purgeState' in spaceData) || spaceData.purgeState == null);
     }
 
     function isSpaceReader(spaceData) {
@@ -45,12 +46,89 @@ service cloud.firestore {
     function canCleanupDocument(spaceId) {
       return spaceExists(spaceId) &&
         isSpaceOwner(getSpaceData(spaceId)) &&
-        !isSpaceActive(getSpaceData(spaceId));
+        !isSpaceActive(getSpaceData(spaceId)) &&
+        (!('purgeState' in getSpaceData(spaceId)) || getSpaceData(spaceId).purgeState == null);
     }
 
     function canContributeToSpace(spaceId) {
       return spaceExists(spaceId) && isSpaceActive(getSpaceData(spaceId)) && isSpaceContributor(getSpaceData(spaceId));
     }
+
+    function getDocumentData(docId) {
+      return get(/databases/$(database)/documents/documents/$(docId)).data;
+    }
+
+    function documentExists(docId) {
+      return exists(/databases/$(database)/documents/documents/$(docId));
+    }
+
+    function isDocumentActive(docData) {
+      return (!('deleted' in docData) || docData.deleted == false) &&
+        (!('deletedAt' in docData) || docData.deletedAt == null);
+    }
+
+    function isDocumentClaimed(docData) {
+      return docData != null && (
+        (('permanentDeletionClaim' in docData) && docData.permanentDeletionClaim != null) ||
+        (('lifecycleClaim' in docData) && docData.lifecycleClaim != null)
+      );
+    }
+
+    function isAncestorClaimed(ancId) {
+      return documentExists(ancId) && isDocumentClaimed(getDocumentData(ancId));
+    }
+
+    function hasClaimedAncestor(path) {
+      return (path is list) && path.size() > 0 && (
+        isAncestorClaimed(path[0]) ||
+        (path.size() > 1 && isAncestorClaimed(path[1])) ||
+        (path.size() > 2 && isAncestorClaimed(path[2]))
+      );
+    }
+
+    function hasClaimedAncestorFromData(docData) {
+      return docData != null && ('path' in docData) && (docData.path is list) && hasClaimedAncestor(docData.path);
+    }
+
+    function isDocumentClaimedById(docId) {
+      return documentExists(docId)
+        ? isDocumentClaimed(getDocumentData(docId))
+        : (existsAfter(/databases/$(database)/documents/documents/$(docId)) && isDocumentClaimed(getAfter(/databases/$(database)/documents/documents/$(docId)).data));
+    }
+
+    function getDocumentSpaceId(docId) {
+      return documentExists(docId)
+        ? getDocumentData(docId).spaceId
+        : getAfter(/databases/$(database)/documents/documents/$(docId)).data.spaceId;
+    }
+
+    function isValidChildDocument(data, docId) {
+      return data.parentId is string &&
+        data.parentId != docId &&
+        !(docId in data.path) &&
+        documentExists(data.parentId) &&
+        getDocumentData(data.parentId).spaceId == data.spaceId &&
+        isDocumentActive(getDocumentData(data.parentId)) &&
+        !isDocumentClaimed(getDocumentData(data.parentId)) &&
+        !hasClaimedAncestorFromData(getDocumentData(data.parentId)) &&
+        ('path' in getDocumentData(data.parentId)) &&
+        (getDocumentData(data.parentId).path is list) &&
+        data.path == getDocumentData(data.parentId).path.concat([data.parentId]);
+    }
+
+    function isValidDocumentHierarchy(docId) {
+      return ('path' in request.resource.data) &&
+        (request.resource.data.path is list) &&
+        request.resource.data.path.size() <= 3 &&
+        !(docId in request.resource.data.path) &&
+        ('parentId' in request.resource.data) &&
+        (
+          (request.resource.data.parentId == null && request.resource.data.path == []) ||
+          isValidChildDocument(request.resource.data, docId)
+        );
+    }
+
+
 
     function isValidSpaceCreate() {
       return isAuthenticated() &&
@@ -139,6 +217,7 @@ service cloud.firestore {
     function isSoftDelete(spaceData, diff) {
       return isSpaceActive(spaceData) &&
         isSpaceOwner(spaceData) &&
+        (!('purgeState' in spaceData) || spaceData.purgeState == null) &&
         diff.affectedKeys().hasOnly(['deletedAt', 'deletedBy', 'updatedAt']) &&
         diff.affectedKeys().hasAny(['deletedAt', 'deletedBy']) &&
         request.resource.data.deletedAt != null &&
@@ -148,6 +227,7 @@ service cloud.firestore {
     function isRestore(spaceData, diff) {
       return !isSpaceActive(spaceData) &&
         isSpaceOwner(spaceData) &&
+        (!('purgeState' in spaceData) || spaceData.purgeState == null) &&
         diff.affectedKeys().hasOnly(['deletedAt', 'deletedBy', 'updatedAt']) &&
         diff.affectedKeys().hasAny(['deletedAt', 'deletedBy']) &&
         request.resource.data.deletedAt == null &&
@@ -171,14 +251,48 @@ service cloud.firestore {
       allow create: if isValidSpaceCreate();
       allow read: if isSpaceReader(resource.data);
       allow update: if isAuthenticated() && isValidSpaceUpdate(resource.data);
-      allow delete: if isAuthenticated() && isSpaceOwner(resource.data) && !isSpaceActive(resource.data);
+      // Direct-client Space deletion is closed. Space deletion must only occur
+      // server-authoritatively via Admin SDK after verifying no documents remain.
+      allow delete: if false;
     }
 
     match /documents/{documentId} {
-      // Allow create if caller is a contributor of the target space
+      function isProtectedDocKeyModified(diff) {
+        return diff.affectedKeys().hasAny([
+          'parentId',
+          'path',
+          'permanentDeletionClaim',
+          'lifecycleClaim',
+          'imageCleanupClaim',
+          'pendingImageCleanup',
+          'retiredImageKeys',
+          'revision',
+          'deleted',
+          'deletedAt',
+          'deletedBy',
+          'deletionGroupId',
+          'deletionGroupRootId',
+          'deletionGroupCount',
+          'restoreParentId'
+        ]);
+      }
+
+      // Allow create if caller is a contributor of the target space, hierarchy is valid, and not claimed
       allow create: if isAuthenticated() &&
         request.resource.data.spaceId is string &&
-        canContributeToSpace(request.resource.data.spaceId);
+        canContributeToSpace(request.resource.data.spaceId) &&
+        !isDocumentClaimed(request.resource.data) &&
+        !('imageCleanupClaim' in request.resource.data) &&
+        !('pendingImageCleanup' in request.resource.data) &&
+        !('retiredImageKeys' in request.resource.data) &&
+        (!('revision' in request.resource.data) || request.resource.data.revision == 1) &&
+        (!('deleted' in request.resource.data) || request.resource.data.deleted == false) &&
+        (!('deletionGroupId' in request.resource.data) || request.resource.data.deletionGroupId == null) &&
+        (!('deletionGroupRootId' in request.resource.data) || request.resource.data.deletionGroupRootId == null) &&
+        (!('deletionGroupCount' in request.resource.data) || request.resource.data.deletionGroupCount == null) &&
+        !('restoreParentId' in request.resource.data) &&
+        !hasClaimedAncestorFromData(request.resource.data) &&
+        isValidDocumentHierarchy(documentId);
       
       // Allow read if caller has read access to document's active space, or owner during cleanup
       allow read: if isAuthenticated() && (
@@ -186,28 +300,30 @@ service cloud.firestore {
         canCleanupDocument(resource.data.spaceId)
       );
       
-      // Allow delete if caller is a contributor of an active space, or owner during cleanup
-      allow delete: if isAuthenticated() && (
-        canContributeToSpace(resource.data.spaceId) ||
-        canCleanupDocument(resource.data.spaceId)
-      );
+      // Disallow direct client permanent deletion in active spaces.
+      // Permanent single-document deletion is handled server-authoritatively via Admin SDK.
+      // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
+      allow delete: if isAuthenticated() && canCleanupDocument(resource.data.spaceId);
 
-      // Allow update if caller is a contributor and spaceId is unchanged
+      // Allow update if caller is a contributor, spaceId is unchanged, document is not claimed,
+      // and client does not alter hierarchy fields ('parentId', 'path') or protected lifecycle/deletion keys
       allow update: if isAuthenticated() &&
         request.resource.data.spaceId == resource.data.spaceId &&
-        canContributeToSpace(resource.data.spaceId);
+        canContributeToSpace(resource.data.spaceId) &&
+        !isDocumentClaimed(resource.data) &&
+        !hasClaimedAncestorFromData(resource.data) &&
+        !isProtectedDocKeyModified(request.resource.data.diff(resource.data));
 
       match /content/{contentId} {
-         allow read: if isAuthenticated() && (
-           canReadSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId) ||
-           canCleanupDocument(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId)
-         );
-         allow create, update: if isAuthenticated() &&
-           canContributeToSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId);
-         allow delete: if isAuthenticated() && (
-           canContributeToSpace(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId) ||
-           canCleanupDocument(get(/databases/$(database)/documents/documents/$(documentId)).data.spaceId)
-         );
+        allow read: if isAuthenticated() &&
+          documentExists(documentId) &&
+          isDocumentActive(getDocumentData(documentId)) &&
+          canReadSpace(getDocumentData(documentId).spaceId);
+        allow create: if isAuthenticated() && canContributeToSpace(getDocumentSpaceId(documentId)) && !isDocumentClaimedById(documentId) && !documentExists(documentId);
+        allow update: if false;
+        // Disallow direct client permanent deletion in active spaces.
+        // Direct client deletion is only allowed for space owner during soft-deleted space cleanup.
+        allow delete: if isAuthenticated() && canCleanupDocument(getDocumentSpaceId(documentId));
       }
     }
 
