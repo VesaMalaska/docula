@@ -98,7 +98,7 @@ The Rules test command starts a local Firebase emulator. It uses the demo projec
 
 ## Deployment
 
-Set the same environment variables in your application host and deploy the app and `firestore.rules` as a coordinated change. The current Rules restrict direct client writes to existing document content; an older app build cannot perform saves after those Rules are deployed. Deploy Firestore indexes when required by your queries. Use a separate Firebase project and S3 bucket for non-production environments.
+Set the same environment variables in your application host and deploy the app and `firestore.rules` as a coordinated change. The current Rules restrict direct client writes to existing document content; an older app build cannot perform saves after those Rules are deployed. Deploy Firestore indexes when required by your queries. Ensure the S3 bucket CORS `AllowedOrigins` includes the deployed application’s exact origin as well as any local origin used for development so image uploads work in production. Use a separate Firebase project and S3 bucket for non-production environments.
 
 ## Finding your way around the code
 
