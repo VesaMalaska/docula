@@ -1,5 +1,7 @@
 packages:
   - .
+overrides:
+  'jwks-rsa>jose': 4.15.9
 allowBuilds:
   '@firebase/util': true
   protobufjs: true
